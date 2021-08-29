@@ -10,7 +10,7 @@ from typing import List, Any, Union, Dict
 # ray related utils
 import ray
 from ray import tune
-from ray.rllib.agents import ppo
+from ray.rllib.agents import ppo, dqn
 from ray.rllib.env.env_context import EnvContext
 from ray.rllib.models import ModelCatalog
 from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
@@ -43,14 +43,22 @@ if __name__ == "__main__":
     # environment = InvariantEnvironment(config=env_config)
 
     ray.init(local_mode=True)
-    rl_config = ppo.DEFAULT_CONFIG.copy()
+    
+    rl_config = dqn.DEFAULT_CONFIG.copy()
     rl_config["num_workers"] = 1
-    rl_config["num_sgd_iter"] = 50
-    rl_config["sgd_minibatch_size"] = 32
     rl_config["model"]["fcnet_hiddens"] = [64,64]
     rl_config["env_config"] = env_config
+    rl_config["exploration_config"]["epsilon_timesteps"] = 10000
 
-    agent = ppo.PPOTrainer(rl_config, env=InvariantEnvironment)
+    # rl_config = ppo.DEFAULT_CONFIG.copy()
+    # rl_config["num_workers"] = 1
+    # rl_config["num_sgd_iter"] = 50
+    # rl_config["sgd_minibatch_size"] = 32
+    # rl_config["model"]["fcnet_hiddens"] = [64,64]
+    # rl_config["env_config"] = env_config
+
+    # agent = ppo.PPOTrainer(rl_config, env=InvariantEnvironment)
+    agent = dqn.DQNTrainer(env=InvariantEnvironment, config=rl_config)
     for i in range(100):
         res = agent.train()
         # print("# episode_reward_mean: {}".format(res["episode_reward_mean"]))

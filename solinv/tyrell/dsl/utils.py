@@ -20,10 +20,12 @@ def derive_dfs(builder: Builder, node: Node, prod: Production):
 	elif isinstance(node, ParamNode):
 		return (False, node)
 	elif isinstance(node, ApplyNode):
+		# print("# [debug] node={}".format(node))
 		# make copy of the node if already derived
 		derived = False
 		tmp_clist = []
 		for i in range(len(node.children)):
+			# print("# [debug] i={}".format(i))
 			if derived:
 				# if expanded, then just copy
 				tmp_clist.append(node.children[i].make_copy())
@@ -36,6 +38,10 @@ def derive_dfs(builder: Builder, node: Node, prod: Production):
 					if node.production.rhs[i] != cnode.production.lhs:
 						raise Exception("Types don't match, expect {}, got {}".format(node.production.rhs[i], cnode.production.lhs))
 					tmp_clist.append(cnode)
+				else:
+					# no hole in this branch and its children
+					tmp_clist.append(node.children[i].make_copy())
+		# print("# [debug] node.production={}, node={}, tmp_clist={}".format(node.production, node, tmp_clist))
 		tmp_node = builder.make_node(node.production, tmp_clist)
 		return (derived, tmp_node)
 	else:

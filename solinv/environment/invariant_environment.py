@@ -1,3 +1,4 @@
+import re
 import subprocess
 import numpy as np
 from typing import List, Any, Union, Dict
@@ -76,6 +77,7 @@ class InvariantEnvironment(gym.Env):
         ret = ret.stdout.decode("utf-8")
         hard_ok, hard = re.search("Hard: ([0-9]+) / ([0-9]+)", ret).groups()
         soft_ok, soft = re.search("Soft: ([0-9]+) / ([0-9]+)", ret).groups()
+        print("# [debug] checking good!!!!!!!!!!!!!!!!!!!!!! result: {}".format([hard_ok, hard, soft_ok, soft]))
         # print("# [debug] result: {}".format(arg_invariant, [hard_ok, hard, soft_ok, soft]))
         return list(map(int, [hard_ok, hard, soft_ok, soft]))
 
@@ -83,7 +85,8 @@ class InvariantEnvironment(gym.Env):
         '''
         returns: [state, reward, done, info]
         '''
-        print("# [debug] curr_inv={}, seq={}, action={}".format(self.curr_inv, self.curr_seq, arg_action_id))
+        # print("# [debug] action={}".format(arg_action_id))
+        # print("# [debug] curr_inv={}, seq={}, action={}".format(self.curr_inv, self.curr_seq, arg_action_id))
         if arg_action_id >= len(self.action_list):
             raise EnvironmentError("required: [0, {}), got: {}".format(len(self.action_list), arg_action_id))
         
@@ -112,20 +115,35 @@ class InvariantEnvironment(gym.Env):
         self.curr_seq = self.curr_seq + [arg_action_id]
         tmp_state = self.get_curr_state()
 
+        # there are different cases
+        # if the invariant is complete
+        #   - if it passes the checking: +nstep*r
+        #   - if it fails the checking: 0.0
+        # if the invariant is not complete
+        #   - if it can still expand: +1.0
+        #   - if it already reaches the max step: -nstep
+        # print("# [debug:good] curr_inv={}, seq={}, action={}".format(self.curr_inv, self.curr_seq, arg_action_id))
+
         tmp_done = self.is_done()
         tmp_reward = None
         if tmp_done:
             tmp_strinv = self.interpreter.eval(self.curr_inv)
             tmp_reslist = self.check(self.contract_path, tmp_strinv)
             if tmp_reslist is None:
-                tmp_reward = -1.0
+                tmp_reward = 0.1
             else:
-                tmp_reward = 1.0*(tmp_reslist[0]/tmp_reslist[1])
+                tmp_reward = 100.0*(tmp_reslist[0]/tmp_reslist[1])
+                # tmp_reward = 100.0
         else:
-            tmp_reward = 0.0
+            if len(self.curr_seq) >= self.max_step:
+                tmp_reward = 0.0
+            else:
+                # tmp_reward = len(self.curr_seq)
+                tmp_reward = 0.1
+
         # tmp_reward += len(self.curr_seq)
         tmp_info = {"info": "good"}
-        tmp_reward = tmp_reward/100
+        # tmp_reward = tmp_reward/100
         # print("# [debug] reward={}".format(tmp_reward))
         # print("# [debug] action={}, good".format(arg_action_id))
         return [tmp_state, tmp_reward, tmp_done, tmp_info]
