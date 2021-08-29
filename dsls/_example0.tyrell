@@ -1,0 +1,28 @@
+# First, specify the types that will be used
+enum EnumInt {
+    "_totalSupply", "0"
+}
+enum EnumMap {
+    "_balances"
+}
+
+value Bool;
+value Int;
+value Map;
+value MapMap;
+value Empty;
+
+# Next, specify the input/output of the synthesized program
+program Generate() -> Bool;
+
+# Finally, specify the production rules
+func empty: Empty -> Empty;
+
+func enum2int: Int -> EnumInt;
+func enum2map: Map -> EnumMap;
+
+func and: Bool -> Bool, Bool;
+func leq: Bool -> Int, Int;
+func add: Int -> Int, Int;
+func flatten: Map -> MapMap;
+func sum: Int -> Map;

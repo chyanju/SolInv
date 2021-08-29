@@ -1,0 +1,21 @@
+# First, specify the types that will be used
+enum EnumExpr {
+    "_totalSupply", "0", "_balances"
+}
+
+value Expr;
+value Empty;
+
+# Next, specify the input/output of the synthesized program
+program Generate() -> Expr;
+
+# Finally, specify the production rules
+func empty: Empty -> Empty;
+
+func enum2expr: Expr -> EnumExpr;
+
+func and: Expr -> Expr, Expr;
+func leq: Expr -> Expr, Expr;
+func add: Expr -> Expr, Expr;
+func flatten: Expr -> Expr;
+func sum: Expr -> Expr;
