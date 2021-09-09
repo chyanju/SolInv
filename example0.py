@@ -53,14 +53,12 @@ class TorchRNNModel(TorchRNN, nn.Module):
         self.fc_size = fc_size
         self.lstm_state_size = lstm_state_size
 
-        # print("# [debug] model_config is: {}".format(model_config))
         # Build the Module from fc + LSTM + 2xfc (action + value outs).
         self.embedding = nn.Embedding(
-            num_embeddings=len(model_config["custom_model_config"]["spec"].productions())+2,
+            num_embeddings=model_config["custom_model_config"]["num_embeddings"],
             embedding_dim=model_config["custom_model_config"]["embedding_size"],
             padding_idx=0,
         )
-        # self.fc1 = nn.Linear(self.obs_size, self.fc_size)
         self.fc1 = nn.Linear(model_config["custom_model_config"]["embedding_size"], self.fc_size)
         self.lstm = nn.LSTM(
             self.fc_size, self.lstm_state_size, batch_first=True)
@@ -85,33 +83,12 @@ class TorchRNNModel(TorchRNN, nn.Module):
         assert self._features is not None, "must call forward() first"
         return torch.reshape(self.value_branch(self._features), [-1])
 
-    # @override(TorchRNN)
-    # def forward(self, input_dict, state, seq_lens):
-    #     """Adds time dimension to batch before sending inputs to forward_rnn().
-    #     You should implement forward_rnn() in your subclass."""
-    #     print("# [debug] forward obs_flat is: {}".format(input_dict["obs_flat"]))
-    #     flat_inputs = input_dict["obs_flat"].float()
-    #     if isinstance(seq_lens, np.ndarray):
-    #         seq_lens = torch.Tensor(seq_lens).int()
-    #     max_seq_len = flat_inputs.shape[0] // seq_lens.shape[0]
-    #     self.time_major = self.model_config.get("_time_major", False)
-    #     inputs = add_time_dimension(
-    #         flat_inputs,
-    #         max_seq_len=max_seq_len,
-    #         framework="torch",
-    #         time_major=self.time_major,
-    #     )
-    #     output, new_state = self.forward_rnn(inputs, state, seq_lens)
-    #     output = torch.reshape(output, [-1, self.num_outputs])
-    #     return output, new_state
-
     @override(TorchRNN)
     def forward(self, input_dict, state, seq_lens):
         # note: somewhat obs_flat is storing action_mask, so you need to use obs[inv] here
-        # print("# [debug] input_dict[obs_flat] is: {}".format(input_dict["obs_flat"]))
+        # print("# [debug] input_dict[obs][contract] size is: {}".format(input_dict["obs"]["contract"].size()))
+        # print("# [debug] input_dict[obs][inv] size is: {}".format(input_dict["obs"]["inv"].size()))
         # print("# [debug] input_dict[obs][inv] is: {}".format(input_dict["obs"]["inv"]))
-        # print("# [debug] input_dict[obs][action_mask] is: {}".format(input_dict["obs"]["action_mask"]))
-        # flat_inputs = input_dict["obs_flat"]
         flat_inputs = input_dict["obs"]["inv"].int()
         if isinstance(seq_lens, np.ndarray):
             seq_lens = torch.Tensor(seq_lens).int()
@@ -159,17 +136,22 @@ class TorchRNNModel(TorchRNN, nn.Module):
         return action_out, [torch.squeeze(h, 0), torch.squeeze(c, 0)]
 
 if __name__ == "__main__":
-    spec = S.parse_file("./dsls/example0.tyrell")
+    spec = S.parse_file("./dsls/abstract0.tyrell")
     start_type = spec.get_type("Expr")
     interpreter = InvariantInterpreter()
     env_config = {
         "spec": spec,
         "start_type": start_type,
         "max_step": 6,
-        "contract_path": "/Users/joseph/Desktop/UCSB/21fall/SolidTypes/test/regression/good/mint_MI.sol",
+        "contract_path": "../SolidTypes/test/regression/good/mint_MI.sol",
+        "max_contract_length": 2500,
+        # options are: 0.4.26, 0.5.17, 0.6.12
+        "solc_version": "0.5.17",
+        "token_list_path": "./token_list0.pkl",
         "interpreter": interpreter
     }
-    # environment = InvariantEnvironment(config=env_config)
+    # need to construct the vocab first to provide parameters for nn
+    tmp_environment = InvariantEnvironment(config=env_config)
 
     ray.init(local_mode=True)
     ModelCatalog.register_custom_model("my_custom_model", TorchRNNModel)
@@ -181,8 +163,8 @@ if __name__ == "__main__":
         "model": {
             "custom_model": "my_custom_model",
             "custom_model_config": {
-                "spec": spec,
                 "embedding_size": 16,
+                "num_embeddings": len(tmp_environment.token_list),
             },
         },
         "num_workers": 1,
