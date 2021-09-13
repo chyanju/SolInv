@@ -267,13 +267,16 @@ class InvariantEnvironment(gym.Env):
         self.curr_seq = self.curr_seq + [arg_action_id]
         tmp_state = self.get_curr_state()
         
+        # ================================ #
+        # ====== reward computation ====== #
+        # ================================ #
         # there are different cases
         # if the invariant is complete
-        #   - if it passes the checking: +nstep*r
-        #   - if it fails the checking: 0.0
+        #   - if it fails the checking: 0.1
+        #   - if it passes the checking: check out larger and finer-grained rewards
         # if the invariant is not complete
-        #   - if it can still expand: +1.0
-        #   - if it already reaches the max step: -nstep
+        #   - but it reaches the max allowed step: 0.0 (which means it should've completed before)
+        #   - and it still can make more steps: 0.1 (continue then)
         tmp_done = self.is_done()
         tmp_max = self.is_max()
         tmp_action_mask = None
@@ -290,7 +293,8 @@ class InvariantEnvironment(gym.Env):
             if tmp_reslist is None:
                 tmp_reward = 0.1
             else:
-                tmp_reward = 100.0*(tmp_reslist[0]/tmp_reslist[1]) + 100*(tmp_reslist[2]/tmp_reslist[3])
+                # tmp_reward = 100.0*(tmp_reslist[0]/tmp_reslist[1]) + 100*(tmp_reslist[2]/tmp_reslist[3])
+                tmp_reward = 10.0*(tmp_reslist[0]+tmp_reslist[2])/(tmp_reslist[1]+tmp_reslist[3])
         else:
             if self.is_max():
                 print("# [debug][max] seq: {}, inv: {}".format(self.curr_seq, self.spinv_to_stoinv(str(self.curr_inv))))
@@ -303,6 +307,7 @@ class InvariantEnvironment(gym.Env):
                 tmp_action_mask = self.get_action_mask(tmp_node.type)
                 tmp_terminate = False
                 tmp_reward = 0.1
+
 
         return [
             {
