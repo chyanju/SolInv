@@ -59,7 +59,7 @@ class InvariantEnvironment(gym.Env):
         # process tokens/vocab
         with open("{}".format(config["token_list_path"]), "rb") as f:
             tmp_token_list = pickle.load(f)
-        self.sptok_list = ["<PAD>", "<SOS>", "<UNK>", "{", "}", "[", "]", ":", ","]
+        self.sptok_list = ["<PAD>", "<UNK>", "{", "}", "[", "]", ":", ","]
         # note: token list can contain Trinity productions
         self.token_list = self.sptok_list + self.action_list + tmp_token_list
         self.token_dict = {self.token_list[i]:i for i in range(len(self.token_list))}
@@ -93,7 +93,7 @@ class InvariantEnvironment(gym.Env):
         self.observation_space = gym.spaces.Dict({
             "contract": gym.spaces.Box(0, len(self.token_list), shape=(self.max_contract_length,), dtype=np.int32),
             "action_mask": gym.spaces.Box(0, 1, shape=(len(self.action_list),), dtype=np.int32), # for output layer, no need to + len(sptok_list)
-            "inv": gym.spaces.Box(0, len(self.action_list)+len(self.sptok_list), shape=(1, ), dtype=np.int32), # for encoding layer, need to + len(sptok_list)
+            "inv": gym.spaces.Box(0, len(self.action_list)+len(self.sptok_list), shape=(self.max_step, ), dtype=np.int32), # for encoding layer, need to + len(sptok_list)
         })
 
     def spinv_to_stoinv(self, arg_str):
@@ -175,14 +175,18 @@ class InvariantEnvironment(gym.Env):
         # for environment representation, i.e., curr_seq:
         #   - special token id = original id - len(sptok_list)
         #   - so other id remian the same
-        return [self.curr_seq[-1]+len(self.sptok_list)]
+        # pad to max_step
+        return [
+            self.curr_seq[i]+len(self.sptok_list) if i<len(self.curr_seq) else 0
+            for i in range(self.max_step)
+        ]
 
     def is_max(self):
         '''
         Returns whether or not the length of action sequence has already reached the preset limit.
         '''
         # -1 since we always have a <SOS> at the beginning
-        return len(self.curr_seq)-1 >= self.max_step
+        return len(self.curr_seq) >= self.max_step
 
     def is_done(self):
         '''
@@ -198,7 +202,8 @@ class InvariantEnvironment(gym.Env):
         # note: this should return data structure as defined by self.observation_space
         #       not only the state (but also including any action mask)
         self.curr_inv = HoleNode(type=self.start_type)
-        self.curr_seq = [self.token_dict["<SOS>"]-len(self.sptok_list)]
+        # self.curr_seq = [self.token_dict["<SOS>"]-len(self.sptok_list)]
+        self.curr_seq = []
         self.done = False
         self.info = {}
         return {
