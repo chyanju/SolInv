@@ -1,2 +1,3 @@
 from .invariant_environment import InvariantEnvironment
+from .invariant_heuristic import InvariantHeuristic
 from .error import EnvironmentError

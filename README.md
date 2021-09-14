@@ -15,3 +15,7 @@ SolInv inherits part of the [Trinity](https://github.com/fredfeng/Trinity) and [
 python ./example0.py
 ```
 
+## Useful Resources
+
+- https://docs.ray.io/en/latest/rllib-training.html#customizing-exploration-behavior
+- 

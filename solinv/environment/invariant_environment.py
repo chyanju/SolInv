@@ -14,6 +14,7 @@ from ..tyrell.interpreter import InvariantInterpreter
 from ..tyrell.dsl import Node, HoleNode
 from ..tyrell.dsl.utils import derive_dfs, get_hole_dfs
 
+from .invariant_heuristic import InvariantHeuristic
 from .error import EnvironmentError
 
 class InvariantEnvironment(gym.Env):
@@ -272,8 +273,10 @@ class InvariantEnvironment(gym.Env):
         # ================================ #
         # there are different cases
         # if the invariant is complete
-        #   - if it fails the checking: 0.1
-        #   - if it passes the checking: check out larger and finer-grained rewards
+        #   - if it fails some heuristics: 0.0
+        #   - else
+        #     - if it fails the checking: 0.1
+        #     - if it passes the checking: check out larger and finer-grained rewards
         # if the invariant is not complete
         #   - but it reaches the max allowed step: 0.0 (which means it should've completed before)
         #   - and it still can make more steps: 0.1 (continue then)
@@ -282,31 +285,54 @@ class InvariantEnvironment(gym.Env):
         tmp_action_mask = None
         tmp_terminate = None
         tmp_reward = None
+        tmp_reward_multiplier = 1.0 # helper for reward shaping of partial heuristics
+        heuristic_list = [
+            InvariantHeuristic.no_enum2expr_root(self.curr_inv),
+            InvariantHeuristic.no_duplicate_children(self.curr_inv)
+        ]
+        if not all(heuristic_list):
+            tmp_reward_multiplier = 0.1
+        # satisfy all partial heuristics
         if tmp_done:
-            print("# [debug][done] seq: {}, inv(before): {}".format(self.curr_seq, self.spinv_to_stoinv(str(self.curr_inv))))
-            tmp_strinv0 = self.interpreter.eval(self.curr_inv)
-            # note: need to map spvar back to stovars
-            tmp_strinv = self.spinv_to_stoinv(tmp_strinv0)
-            tmp_reslist = self.check(self.contract_path, tmp_strinv)
-            tmp_action_mask = [0 for _ in range(len(self.action_list))]
-            tmp_terminate = True
-            if tmp_reslist is None:
-                tmp_reward = 0.1
-            else:
-                # tmp_reward = 100.0*(tmp_reslist[0]/tmp_reslist[1]) + 100*(tmp_reslist[2]/tmp_reslist[3])
-                tmp_reward = 10.0*(tmp_reslist[0]+tmp_reslist[2])/(tmp_reslist[1]+tmp_reslist[3])
-        else:
-            if self.is_max():
-                print("# [debug][max] seq: {}, inv: {}".format(self.curr_seq, self.spinv_to_stoinv(str(self.curr_inv))))
+            # done, should check the heuristics first
+            if not all(heuristic_list):
+                # some heuristics won't fit, prevent this invariant from going to checker
+                print("# [debug][heuristic][{}] seq: {}, inv(before): {}".format(
+                    tmp_reward_multiplier, self.curr_seq, self.spinv_to_stoinv(str(self.curr_inv)))
+                )
                 tmp_action_mask = [0 for _ in range(len(self.action_list))]
                 tmp_terminate = True
-                tmp_reward = 0.0
+                tmp_reward = 0.1 # no multiplier
+            else:
+                # all good, go to the checker
+                print("# [debug][done][{}] seq: {}, inv(before): {}".format(
+                    tmp_reward_multiplier, self.curr_seq, self.spinv_to_stoinv(str(self.curr_inv)))
+                )
+                tmp_strinv0 = self.interpreter.eval(self.curr_inv)
+                # note: need to map spvar back to stovars
+                tmp_strinv = self.spinv_to_stoinv(tmp_strinv0)
+                tmp_reslist = self.check(self.contract_path, tmp_strinv)
+                tmp_action_mask = [0 for _ in range(len(self.action_list))]
+                tmp_terminate = True
+                if tmp_reslist is None:
+                    tmp_reward = 1.0 * tmp_reward_multiplier
+                else:
+                    # tmp_reward = 100.0*(tmp_reslist[0]/tmp_reslist[1]) + 100*(tmp_reslist[2]/tmp_reslist[3])
+                    tmp_reward = 10.0*(tmp_reslist[0]+tmp_reslist[2])/(tmp_reslist[1]+tmp_reslist[3]) * tmp_reward_multiplier
+        else:
+            if self.is_max():
+                print("# [debug][max][{}] seq: {}, inv: {}".format(
+                    tmp_reward_multiplier, self.curr_seq, self.spinv_to_stoinv(str(self.curr_inv)))
+                )
+                tmp_action_mask = [0 for _ in range(len(self.action_list))]
+                tmp_terminate = True
+                tmp_reward = 0.0 * tmp_reward_multiplier
             else:
                 # tmp_node here must not be None since it's not done yet
                 tmp_node = get_hole_dfs(self.curr_inv)
                 tmp_action_mask = self.get_action_mask(tmp_node.type)
                 tmp_terminate = False
-                tmp_reward = 0.1
+                tmp_reward = 0.1 * tmp_reward_multiplier
 
 
         return [
