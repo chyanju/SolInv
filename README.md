@@ -15,7 +15,29 @@ SolInv/Venti inherits part of the [Trinity](https://github.com/fredfeng/Trinity)
 python ./example0.py
 ```
 
+## Design Notes
+
+#### Reward Design
+
+```
+# ================================ #
+# ====== reward computation ====== #
+# ================================ #
+# hm: heuristic multiplier (default 1.0, any heuristic failing will make it 0.1)
+# rm: repeat multiplier (default 1.0, computed by 1.0/<times>)
+# all rewards will be multiplied by hm and rm
+# there are different cases
+# if the invariant is complete
+#   - if it fails some heuristics: 1.0
+#   - else
+#     - if it fails the checking: 0.1
+#     - if it passes the checking: 10.0 * percentage_of_constraints_passed 
+# if the invariant is not complete
+#   - but it reaches the max allowed step: 0.0 (which means it should've completed before)
+#   - and it still can make more steps: 0.1 (continue then)
+```
+
 ## Useful Resources
 
 - https://docs.ray.io/en/latest/rllib-training.html#customizing-exploration-behavior
-- 
+

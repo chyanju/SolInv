@@ -46,6 +46,10 @@ class InvariantEnvironment(gym.Env):
     curr_seq: List[int]
     info: Dict[str, Any]
 
+    # note: class static variable
+    #       used to track previously sampled sequences, for coverage based exploration
+    sampled_sequences = {}
+
     def __init__(self, config: Dict[str, Any]):
         self.tspec = config["spec"]
         self.builder = D.Builder(self.tspec)
@@ -96,6 +100,13 @@ class InvariantEnvironment(gym.Env):
             "action_mask": gym.spaces.Box(0, 1, shape=(len(self.action_list),), dtype=np.int32), # for output layer, no need to + len(sptok_list)
             "inv": gym.spaces.Box(0, len(self.action_list)+len(self.sptok_list), shape=(self.max_step, ), dtype=np.int32), # for encoding layer, need to + len(sptok_list)
         })
+
+    def record_sequence(self, arg_seq):
+        # add the sequence to the class level recorder and count
+        tup_seq = tuple(arg_seq)
+        if tup_seq not in InvariantEnvironment.sampled_sequences.keys():
+            InvariantEnvironment.sampled_sequences[tup_seq] = 0
+        InvariantEnvironment.sampled_sequences[tup_seq] += 1
 
     def spinv_to_stoinv(self, arg_str):
         '''
@@ -226,7 +237,10 @@ class InvariantEnvironment(gym.Env):
         print()
         print("# [debug] --------------------------------------------- checking good, result: {} ---------------------------------------------".format([hard_ok, hard, soft_ok, soft]))
         print()
-        return list(map(int, [hard_ok, hard, soft_ok, soft]))
+        result = list(map(int, [hard_ok, hard, soft_ok, soft]))
+        if result[0]+result[2]==result[1]+result[3]:
+            input("Found the ground truth!")
+        return result
 
     def step(self, arg_action_id: int):
         '''
@@ -271,12 +285,15 @@ class InvariantEnvironment(gym.Env):
         # ================================ #
         # ====== reward computation ====== #
         # ================================ #
+        # hm: heuristic multiplier (default 1.0, any heuristic failing will make it 0.1)
+        # rm: repeat multiplier (default 1.0, computed by 1.0/<times>)
+        # all rewards will be multiplied by hm and rm
         # there are different cases
         # if the invariant is complete
-        #   - if it fails some heuristics: 0.0
+        #   - if it fails some heuristics: 1.0
         #   - else
         #     - if it fails the checking: 0.1
-        #     - if it passes the checking: check out larger and finer-grained rewards
+        #     - if it passes the checking: 10.0 * percentage_of_constraints_passed 
         # if the invariant is not complete
         #   - but it reaches the max allowed step: 0.0 (which means it should've completed before)
         #   - and it still can make more steps: 0.1 (continue then)
@@ -285,28 +302,32 @@ class InvariantEnvironment(gym.Env):
         tmp_action_mask = None
         tmp_terminate = None
         tmp_reward = None
-        tmp_reward_multiplier = 1.0 # helper for reward shaping of partial heuristics
+        tmp_heuristic_multiplier = 1.0 # helper for reward shaping of partial heuristics
+        tmp_repeat_multiplier = 1.0 # helper for reward shaping of coverage-based exploration
         heuristic_list = [
             InvariantHeuristic.no_enum2expr_root(self.curr_inv),
             InvariantHeuristic.no_duplicate_children(self.curr_inv)
         ]
         if not all(heuristic_list):
-            tmp_reward_multiplier = 0.1
+            tmp_heuristic_multiplier = 0.1
         # satisfy all partial heuristics
         if tmp_done:
+            self.record_sequence(self.curr_seq)
+            tmp_repeat_multiplier = 1.0/InvariantEnvironment.sampled_sequences[tuple(self.curr_seq)]
             # done, should check the heuristics first
             if not all(heuristic_list):
                 # some heuristics won't fit, prevent this invariant from going to checker
-                print("# [debug][heuristic][{}] seq: {}, inv(before): {}".format(
-                    tmp_reward_multiplier, self.curr_seq, self.spinv_to_stoinv(str(self.curr_inv)))
+                print("# [debug][heuristic][hm={}][rm={:.2f}] seq: {}, inv(before): {}".format(
+                    tmp_heuristic_multiplier, tmp_repeat_multiplier, self.curr_seq, self.spinv_to_stoinv(str(self.curr_inv)))
                 )
                 tmp_action_mask = [0 for _ in range(len(self.action_list))]
                 tmp_terminate = True
-                tmp_reward = 0.1 # no multiplier
+                # tmp_reward = 0.1 # no multiplier
+                tmp_reward = 1.0 * tmp_heuristic_multiplier * tmp_repeat_multiplier
             else:
                 # all good, go to the checker
-                print("# [debug][done][{}] seq: {}, inv(before): {}".format(
-                    tmp_reward_multiplier, self.curr_seq, self.spinv_to_stoinv(str(self.curr_inv)))
+                print("# [debug][done][hm={}][rm={:.2f}] seq: {}, inv(before): {}".format(
+                    tmp_heuristic_multiplier, tmp_repeat_multiplier, self.curr_seq, self.spinv_to_stoinv(str(self.curr_inv)))
                 )
                 tmp_strinv0 = self.interpreter.eval(self.curr_inv)
                 # note: need to map spvar back to stovars
@@ -315,24 +336,26 @@ class InvariantEnvironment(gym.Env):
                 tmp_action_mask = [0 for _ in range(len(self.action_list))]
                 tmp_terminate = True
                 if tmp_reslist is None:
-                    tmp_reward = 1.0 * tmp_reward_multiplier
+                    tmp_reward = 1.0 * tmp_heuristic_multiplier * tmp_repeat_multiplier
                 else:
                     # tmp_reward = 100.0*(tmp_reslist[0]/tmp_reslist[1]) + 100*(tmp_reslist[2]/tmp_reslist[3])
-                    tmp_reward = 10.0*(tmp_reslist[0]+tmp_reslist[2])/(tmp_reslist[1]+tmp_reslist[3]) * tmp_reward_multiplier
+                    tmp_reward = 10.0*(tmp_reslist[0]+tmp_reslist[2])/(tmp_reslist[1]+tmp_reslist[3]) * tmp_heuristic_multiplier * tmp_repeat_multiplier
         else:
             if self.is_max():
-                print("# [debug][max][{}] seq: {}, inv: {}".format(
-                    tmp_reward_multiplier, self.curr_seq, self.spinv_to_stoinv(str(self.curr_inv)))
+                self.record_sequence(self.curr_seq)
+                tmp_repeat_multiplier = 1.0/InvariantEnvironment.sampled_sequences[tuple(self.curr_seq)]
+                print("# [debug][max][hm={}][rm={:.2f}] seq: {}, inv: {}".format(
+                    tmp_heuristic_multiplier, tmp_repeat_multiplier, self.curr_seq, self.spinv_to_stoinv(str(self.curr_inv)))
                 )
                 tmp_action_mask = [0 for _ in range(len(self.action_list))]
                 tmp_terminate = True
-                tmp_reward = 0.0 * tmp_reward_multiplier
+                tmp_reward = 0.0 * tmp_heuristic_multiplier * tmp_repeat_multiplier
             else:
                 # tmp_node here must not be None since it's not done yet
                 tmp_node = get_hole_dfs(self.curr_inv)
                 tmp_action_mask = self.get_action_mask(tmp_node.type)
                 tmp_terminate = False
-                tmp_reward = 0.1 * tmp_reward_multiplier
+                tmp_reward = 0.1 * tmp_heuristic_multiplier * tmp_repeat_multiplier
 
 
         return [
