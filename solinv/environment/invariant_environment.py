@@ -238,8 +238,8 @@ class InvariantEnvironment(gym.Env):
         print("# [debug] --------------------------------------------- checking good, result: {} ---------------------------------------------".format([hard_ok, hard, soft_ok, soft]))
         print()
         result = list(map(int, [hard_ok, hard, soft_ok, soft]))
-        if result[0]+result[2]==result[1]+result[3]:
-            input("Found the ground truth!")
+        # if result[0]+result[2]==result[1]+result[3]:
+        #     input("Found the ground truth!")
         return result
 
     def step(self, arg_action_id: int):
@@ -338,8 +338,12 @@ class InvariantEnvironment(gym.Env):
                 if tmp_reslist is None:
                     tmp_reward = 1.0 * tmp_heuristic_multiplier * tmp_repeat_multiplier
                 else:
-                    # tmp_reward = 100.0*(tmp_reslist[0]/tmp_reslist[1]) + 100*(tmp_reslist[2]/tmp_reslist[3])
-                    tmp_reward = 10.0*(tmp_reslist[0]+tmp_reslist[2])/(tmp_reslist[1]+tmp_reslist[3]) * tmp_heuristic_multiplier * tmp_repeat_multiplier
+                    if tmp_reslist[0]+tmp_reslist[2]==tmp_reslist[1]+tmp_reslist[3]:
+                        # completely correct, remove rm
+                        tmp_reward = 10.0*(tmp_reslist[0]+tmp_reslist[2])/(tmp_reslist[1]+tmp_reslist[3])
+                    else:
+                        # not entirely correct, still need rm
+                        tmp_reward = 10.0*(tmp_reslist[0]+tmp_reslist[2])/(tmp_reslist[1]+tmp_reslist[3]) * tmp_heuristic_multiplier * tmp_repeat_multiplier
         else:
             if self.is_max():
                 self.record_sequence(self.curr_seq)

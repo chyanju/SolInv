@@ -40,4 +40,5 @@ python ./example0.py
 ## Useful Resources
 
 - https://docs.ray.io/en/latest/rllib-training.html#customizing-exploration-behavior
+- https://docs.ray.io/en/latest/rllib-training.html#getting-started
 
