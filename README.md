@@ -13,6 +13,7 @@ SolInv/Venti inherits part of the [Trinity](https://github.com/fredfeng/Trinity)
 
 ```bash
 python ./example0.py
+tensorboard --host 0.0.0.0 --logdir=~/ray_results
 ```
 
 ## Design Notes
