@@ -26,9 +26,11 @@ if __name__ == "__main__":
         "spec": spec,
         "start_type": start_type,
         "max_step": 6,
-        "contract_path": "../SolidTypes/test/regression/good/mint_MI.sol",
-        # options are: 0.4.26, 0.5.17, 0.6.12
-        "solc_version": "0.5.17",
+        # version options are: 0.4.26, 0.5.17, 0.6.12
+        "contracts": [
+            # ("./benchmarks/mint_MI.sol", "0.5.17"),
+            ("./benchmarks/easy/0x1ccaa0f2a7210d76e1fdec740d5f323e2e1b1672.sol", "0.4.26"),
+        ],
         "interpreter": interpreter
     }
     # need to construct the vocab first to provide parameters for nn

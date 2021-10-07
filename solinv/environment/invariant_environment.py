@@ -42,9 +42,12 @@ class InvariantEnvironment(gym.Env):
         self.builder = D.Builder(self.tspec)
         self.start_type = config["start_type"]
         self.max_step = config["max_step"]
-        self.solc_version = config["solc_version"]
         self.interpreter = config["interpreter"]
-        self.contract_path = config["contract_path"]
+
+        # fixme: choose a contract
+        tmp_id = 0
+        self.contract_path = config["contracts"][tmp_id][0]
+        self.solc_version = config["contracts"][tmp_id][1]
 
         # ================== #
         # vocabulary related #
@@ -69,18 +72,21 @@ class InvariantEnvironment(gym.Env):
         self.action_dict = {self.action_list[i]:i for i in range(len(self.action_list))}
 
         self.special_token_list = ["<PAD>", "<ID>", "<REF>"]
-        self.reserved_identifier_token_list = ["require"]
+        self.reserved_identifier_token_list = ["require", "assert", "sender", "msg", "super"]
         self.reserved_vertex_token_list = sorted([
             "<DICT>", "<LIST>",
-            "!=", "+", "=", ">=",
-            "Mapping", "uint256",
-            "number"
+            "!=", "+", "=", ">=", "<=", "!", "*", "/", "==", "%", "-", ">", "<", "||", "&&", "**",
+            "Mapping", 
+            "uint", "uint256", "uint8",
+            "number", "address", "bool", "string",
+            "<EVENT>", "<FUNCTION>", # fixme: should probably use <EVENT>?
         ])
         self.reserved_edge_token_list = sorted([
             0, 1, 2, 3, 4, 5, 6, 7, 8, 9
         ]) + sorted([
-            "arguments", "operator", "leftExpression", "rightExpression", "expression", "leftHandSide", "rightHandSide",
-            "baseExpression", "indexExpression", "topType", "keyType", "valueType"
+            "arguments", "operator", "leftExpression", "rightExpression", "subExpression", "expression", "leftHandSide", "rightHandSide",
+            "baseExpression", "indexExpression", "topType", "keyType", "valueType", "condition", "trueBody", "memberName",
+            "components", "initialValue",
         ])
         # every token in the token list should have a fixed embedding for
         self.base_token_list = self.special_token_list \
@@ -96,6 +102,7 @@ class InvariantEnvironment(gym.Env):
         # tokenize the target contract
         self.contract_json = self.get_contract_ast(self.contract_path, self.solc_version)
         self.contract_static_env, self.contract_slim_ast = self.get_slim_ast(self.contract_json)
+        # print("# slim ast looks like:\n{}".format(self.contract_slim_ast))
         # e2n: variable name -> node id
         #      e.g., {'_balances': 0, '_totalSupply': 4, 'account': 5, 'value': 6}
         # e2r: variable name -> list of node ids that refer to this variable, e.g., 
@@ -234,16 +241,41 @@ class InvariantEnvironment(gym.Env):
         parsed_json = json.loads(raw_json)
         return parsed_json
 
+    # def get_contract_stovars(self, arg_path):
+    #     cmd_sto = subprocess.run("liquidsol-exe {} --task stovars".format(arg_path), shell=True, capture_output=True)
+    #     assert(cmd_sto.returncode == 0)
+    #     raw_output = cmd_sto.stdout.decode("utf-8")
+    #     lines = raw_output.rstrip().split("\n")[1:]
+    #     assert(len(lines) % 2 == 0)
+    #     n = len(lines) // 2
+    #     tmp_list = []
+    #     for i in range(n):
+    #         tmp_list.append(lines[i])
+    #     print("# stovars are: {}".format(tmp_list))
+    #     return tmp_list
+
     def get_contract_stovars(self, arg_path):
         cmd_sto = subprocess.run("liquidsol-exe {} --task stovars".format(arg_path), shell=True, capture_output=True)
         assert(cmd_sto.returncode == 0)
         raw_output = cmd_sto.stdout.decode("utf-8")
-        lines = raw_output.rstrip().split("\n")[1:]
-        assert(len(lines) % 2 == 0)
-        n = len(lines) // 2
+        lines = raw_output.rstrip().split("\n")
+        # split different classes
+        break_points = []
+        for i in range(len(lines)):
+            if lines[i].startswith("Now running"):
+                break_points.append(i)
+        break_points.append(len(lines))
+        # process every block
         tmp_list = []
-        for i in range(n):
-            tmp_list.append(lines[i])
+        for j in range(len(break_points)-1):
+            curr_lines = lines[break_points[j]+1:break_points[j+1]]
+            assert(len(curr_lines) % 2 == 0)
+            n = len(curr_lines) // 2
+            for i in range(n):
+                tmp_list.append(curr_lines[i])
+        # fixme: remove duplicate, this is not super appropriate
+        tmp_list = list(set(tmp_list))
+        print("# stovars are: {}".format(tmp_list))
         return tmp_list
 
     # fixme: need to adjust the extraction method to account for different contracts
@@ -251,7 +283,7 @@ class InvariantEnvironment(gym.Env):
     #       i.e., all variables can only be defined once, regardless of any scope
     def get_slim_ast(self, arg_json):
         # start from a specific "ContractDefinition" node
-        start_json = arg_json["nodes"][0]
+        start_json = arg_json
         static_env = {}
         return_json = self._rec_extract_slim_ast(start_json, static_env)
         return (static_env, return_json)
@@ -259,22 +291,18 @@ class InvariantEnvironment(gym.Env):
     # venv: virtual environemnt that provies access to in-scope variable declarations
     def _rec_extract_slim_ast(self, arg_json, inherited_venv):
         ret_obj = None
-        if isinstance(arg_json, dict):
+        if arg_json is None:
+            # skip
+            pass
+        elif isinstance(arg_json, dict):
             if "nodeType" in arg_json.keys():
-                if arg_json["nodeType"] == "ContractDefinition":
+                if arg_json["nodeType"] == "SourceUnit":
+                    ret_obj = [self._rec_extract_slim_ast(p, inherited_venv) for p in arg_json["nodes"]]
+                elif arg_json["nodeType"] == "ContractDefinition":
                     ret_obj = [self._rec_extract_slim_ast(p, inherited_venv) for p in arg_json["nodes"]]
                 elif arg_json["nodeType"] == "VariableDeclaration":
                     tmp_name = arg_json["name"]
-                    if arg_json["typeName"]["nodeType"] == "Mapping":
-                        tmp_type = {
-                            "topType": "Mapping",
-                            "keyType": arg_json["typeName"]["keyType"]["name"],
-                            "valueType": arg_json["typeName"]["valueType"]["name"],
-                        }
-                    elif arg_json["typeName"]["nodeType"] == "ElementaryTypeName":
-                        tmp_type = arg_json["typeName"]["name"]
-                    else:
-                        raise NotImplementedError("Unsupported VariableDeclaration, got: {}.".format(arg_json))
+                    tmp_type = self._rec_extract_slim_ast(arg_json["typeName"], inherited_venv)
                     # directly override even if there's already on in inherited env
                     inherited_venv[tmp_name] = tmp_type
                 elif arg_json["nodeType"] == "FunctionDefinition":
@@ -282,6 +310,17 @@ class InvariantEnvironment(gym.Env):
                     for p in arg_json["parameters"]["parameters"]:
                         self._rec_extract_slim_ast(p, inherited_venv) 
                     ret_obj = self._rec_extract_slim_ast(arg_json["body"], inherited_venv)
+                    # then store the definition to the environment
+                    tmp_name = arg_json["name"]
+                    inherited_venv[tmp_name] = "<FUNCTION>"
+                elif arg_json["nodeType"] == "ElementaryTypeName":
+                    ret_obj = arg_json["name"]
+                elif arg_json["nodeType"] == "Mapping":
+                    ret_obj = {
+                        "topType": "Mapping",
+                        "keyType": self._rec_extract_slim_ast(arg_json["keyType"], inherited_venv),
+                        "valueType": self._rec_extract_slim_ast(arg_json["valueType"], inherited_venv),
+                    }
                 elif arg_json["nodeType"] == "Block":
                     ret_obj = [self._rec_extract_slim_ast(p, inherited_venv) for p in arg_json["statements"]]
                 elif arg_json["nodeType"] == "ExpressionStatement":
@@ -299,8 +338,9 @@ class InvariantEnvironment(gym.Env):
                         ret_obj = ("<IDENTIFIER>", arg_json["name"])
                 elif arg_json["nodeType"] == "Literal":
                     if arg_json["kind"] == "number":
-                        # ret_obj = arg_json["value"]
                         ret_obj = "number"
+                    elif arg_json["kind"] == "bool":
+                        ret_obj = "bool"
                     else:
                         raise NotImplementedError("Unsupported literal, got: {}.".format(arg_json))
                 elif arg_json["nodeType"] == "BinaryOperation":
@@ -320,6 +360,65 @@ class InvariantEnvironment(gym.Env):
                         "baseExpression": self._rec_extract_slim_ast(arg_json["baseExpression"], inherited_venv),
                         "indexExpression": self._rec_extract_slim_ast(arg_json["indexExpression"], inherited_venv),
                     }
+                elif arg_json["nodeType"] == "IfStatement":
+                    ret_obj = {
+                        "condition": self._rec_extract_slim_ast(arg_json["condition"], inherited_venv),
+                        "trueBody": self._rec_extract_slim_ast(arg_json["trueBody"], inherited_venv),
+                    }
+                elif arg_json["nodeType"] == "Return":
+                    ret_obj = {
+                        "expression": self._rec_extract_slim_ast(arg_json["expression"], inherited_venv),
+                    }
+                elif arg_json["nodeType"] == "VariableDeclarationStatement":
+                    ret_obj = {
+                        "initialValue": self._rec_extract_slim_ast(arg_json["initialValue"], inherited_venv),
+                        "declarations": [self._rec_extract_slim_ast(p, inherited_venv) for p in arg_json["declarations"]],
+                    }
+                    # remove key if all of the list members are None
+                    tmp_ss = list(set(ret_obj["declarations"]))
+                    if len(tmp_ss) == 0:
+                        del ret_obj["declarations"]
+                    elif len(tmp_ss) == 1 and tmp_ss[0] is None:
+                        del ret_obj["declarations"]
+                elif arg_json["nodeType"] == "ElementaryTypeNameExpression":
+                    if arg_json["typeName"] == "address":
+                        ret_obj = "address"
+                    elif arg_json["typeName"] == "uint256":
+                        ret_obj = "uint256"
+                    else:
+                        raise NotImplementedError("Unsupported type name, got: {}.".format(arg_json["typeName"]))
+                elif arg_json["nodeType"] == "MemberAccess":
+                    m = None
+                    if arg_json["memberName"] in self.reserved_identifier_token_list:
+                        # use the original value
+                        m = arg_json["memberName"]
+                    else:
+                        m = ("<IDENTIFIER>", arg_json["memberName"])
+                    ret_obj = {
+                        "memberName": m,
+                        "expression": self._rec_extract_slim_ast(arg_json["expression"], inherited_venv),
+                    }
+                elif arg_json["nodeType"] == "TupleExpression":
+                    ret_obj = {
+                        "components": [self._rec_extract_slim_ast(p, inherited_venv) for p in arg_json["components"]]
+                    }
+                elif arg_json["nodeType"] == "UnaryOperation":
+                    ret_obj = {
+                        "operator": arg_json["operator"],
+                        "subExpression": self._rec_extract_slim_ast(arg_json["subExpression"], inherited_venv),
+                    }
+                elif arg_json["nodeType"] == "ModifierDefinition":
+                    ret_obj = self._rec_extract_slim_ast(arg_json["body"], inherited_venv)
+                elif arg_json["nodeType"] == "PlaceholderStatement":
+                    pass
+                elif arg_json["nodeType"] == "UsingForDirective":
+                    pass
+                elif arg_json["nodeType"] == "PragmaDirective":
+                    # skip this one, will return None
+                    pass
+                elif arg_json["nodeType"] == "EventDefinition":
+                    tmp_name = arg_json["name"]
+                    inherited_venv[tmp_name] = "<EVENT>"
                 else:
                     raise NotImplementedError("Unsupported nodeType, got: {}.".format(arg_json["nodeType"]))
             else:
