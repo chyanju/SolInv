@@ -165,7 +165,9 @@ class InvariantEnvironment(gym.Env):
                 "edge_index_tgt": gym.spaces.Box(0, InvariantEnvironment.CONTRACT_MAX_NODES-1, shape=(InvariantEnvironment.CONTRACT_MAX_EDGES,), dtype=np.int32),
             }),
             "action_mask": gym.spaces.Box(0, 1, shape=(len(self.action_list),), dtype=np.int32), # for output layer, no need to + len(sptok_list)
+            # fixme: 1000 should be MAX_NODES
             "nn_seq": gym.spaces.Box(0, len(self.token_list)+1000, shape=(self.max_step, ), dtype=np.int32), # for encoding layer, need to + len(sptok_list)
+            "action_seq": gym.spaces.Box(0, len(self.token_list)+1000, shape=(len(self.action_list),), dtype=np.int32), # for dynamic action output, remain the same for the same contract
         })
 
     def action_seq_to_nn_seq(self, arg_action_seq):
@@ -446,6 +448,7 @@ class InvariantEnvironment(gym.Env):
             "contract": self.contract_observed,
             "action_mask": self.get_action_mask(self.start_type),
             "nn_seq": self.pad_to_length(self.action_seq_to_nn_seq(self.curr_action_seq), self.max_step),
+            "action_seq": self.action_seq_to_nn_seq(list(range(len(self.action_list)))),
         }
 
     def check(self, arg_contract_path: str, arg_verifier_inv: str):
@@ -493,6 +496,7 @@ class InvariantEnvironment(gym.Env):
                     "contract": self.contract_observed,
                     "action_mask": [0 for _ in range(len(self.action_list))], 
                     "nn_seq": self.pad_to_length(self.action_seq_to_nn_seq(self.curr_action_seq), self.max_step),
+                    "action_seq": self.action_seq_to_nn_seq(list(range(len(self.action_list)))),
                 }, 
                 0.0, # reward 
                 True, # terminate
@@ -591,6 +595,7 @@ class InvariantEnvironment(gym.Env):
                 "contract": self.contract_observed,
                 "action_mask": tmp_action_mask, 
                 "nn_seq": self.pad_to_length(self.action_seq_to_nn_seq(self.curr_action_seq), self.max_step),
+                "action_seq": self.action_seq_to_nn_seq(list(range(len(self.action_list)))),
             }, 
             tmp_reward, 
             tmp_terminate, 

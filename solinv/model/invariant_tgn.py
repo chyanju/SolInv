@@ -55,23 +55,58 @@ class InvariantTGN(TorchModelV2, nn.Module):
             batch_first=True,
         )
 
-        # fixme: need dynamic output
-        self.action_branch = nn.Linear(
-            self.config["invariant_out_dim"],
-            self.config["action_out_dim"],
+        # helper layer for action_function
+        self.action_bias_branch = nn.Linear(
+            self.config["token_embedding_dim"],
+            1,
         )
+        self.action_projection_branch = nn.Linear(
+            self.config["token_embedding_dim"],
+            self.config["invariant_out_dim"],
+        )
+        # use default
         self.value_branch = nn.Linear(
             self.config["invariant_out_dim"],
             1,
         )
 
         self._invariant_features = None
-        self._contract_features = None
 
     @override(TorchModelV2)
     def value_function(self):
         assert self._invariant_features is not None, "self._invariant_features is None, call forward() first."
         return torch.reshape(self.value_branch(self._invariant_features), [-1])
+
+    def action_function(self, arg_inv, arg_graph_repr, arg_action_seq):
+        # perform attention-like (dynamic activation function) over actions
+        # this does not require override
+        # arg_inv: (B, invariant_out_dim)
+        # arg_graph_repr: [(num_nodes, token_embedding_dim), ...]
+        # arg_action_seq: (B, len(env.action_list))
+        B = arg_inv.shape[0]
+
+        # tmp0: (B, len(env.action_list), token_embedding_dim)
+        tmp0 = self.mixed_embedding(arg_action_seq, arg_graph_repr)
+        # tmp1: (B, len(env.action_list), invariant_out_dim)
+        tmp1 = self.action_projection_branch(tmp0)
+
+        # tmp2: (B, invariant_out_dim, 1)
+        tmp2 = arg_inv.view(B, self.config["invariant_out_dim"], 1)
+
+        # simulate matrix multiplication
+        # tmp3: (B, len(env.action_list), 1)
+        tmp3 = torch.matmul(tmp1, tmp2)
+        # tmp4: (B, len(env.action_list))
+        tmp4 = tmp3.view(B, self.config["action_out_dim"])
+
+        # tmp_bias: (B, len(env.action_list), 1)
+        tmp_bias = self.action_bias_branch(tmp0).view(B, self.config["action_out_dim"])
+
+        # apply bias
+        # tmp_out: (B, len(env.action_list))
+        tmp_out = tmp4 + tmp_bias
+
+        return tmp_out
 
     def recover_graph_date(self, arg_contract):
         # recover graph data from obs
@@ -203,7 +238,7 @@ class InvariantTGN(TorchModelV2, nn.Module):
         # =====================
 
         # tmp0_inv: (B, max_step)
-        tmp0_inv = input_dict["obs"]["nn_seq"].int()
+        tmp0_inv = input_dict["obs"]["nn_seq"].long()
 
         if self.time_major:
             # (max_step, B)
@@ -216,7 +251,7 @@ class InvariantTGN(TorchModelV2, nn.Module):
         # input("PAUSE")
 
         # (B, action_out_dim)
-        tmp2_inv = self.action_branch(tmp1_inv)
+        tmp2_inv = self.action_function(tmp1_inv, tmp1_graph_repr, input_dict["obs"]["action_seq"].long())
 
         # apply masking, ref: https://towardsdatascience.com/action-masking-with-rllib-5e4bec5e7505
         # will broadcast with shape
