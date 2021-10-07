@@ -72,7 +72,7 @@ class InvariantEnvironment(gym.Env):
         self.action_dict = {self.action_list[i]:i for i in range(len(self.action_list))}
 
         self.special_token_list = ["<PAD>", "<ID>", "<REF>"]
-        self.reserved_identifier_token_list = ["require", "assert", "sender", "msg", "super", "now", "length"]
+        self.reserved_identifier_token_list = ["require", "assert", "sender", "msg", "super", "now", "length", "this"]
         self.reserved_vertex_token_list = sorted([
             "<DICT>", "<LIST>",
             "!=", "+", "=", ">=", "<=", "!", "*", "/", "==", "%", "-", ">", "<", "||", "&&", "**",
@@ -102,7 +102,7 @@ class InvariantEnvironment(gym.Env):
         # tokenize the target contract
         self.contract_json = self.get_contract_ast(self.contract_path, self.solc_version)
         self.contract_static_env, self.contract_slim_ast = self.get_slim_ast(self.contract_json)
-        print("# slim ast looks like:\n{}".format(self.contract_slim_ast))
+        # print("# slim ast looks like:\n{}".format(self.contract_slim_ast))
         # e2n: variable name -> node id
         #      e.g., {'_balances': 0, '_totalSupply': 4, 'account': 5, 'value': 6}
         # e2r: variable name -> list of node ids that refer to this variable, e.g., 
@@ -286,7 +286,56 @@ class InvariantEnvironment(gym.Env):
         start_json = arg_json
         static_env = {}
         return_json = self._rec_extract_slim_ast(start_json, static_env)
-        return (static_env, return_json)
+        squeeze_json = self._rec_squeeze_none(return_json)
+        # note: clean both the return_json and env
+        # print("static_env: {}".format(static_env))
+        for dkey in static_env.keys():
+            static_env[dkey] = self._rec_squeeze_none(static_env[dkey])
+            # big-fixme: if is None, replace with a temporary
+            # assert static_env[dkey] is not None
+            if static_env[dkey] is None:
+                static_env[dkey] = "<PAD>"
+        return (static_env, squeeze_json)
+
+    # final processing of a slim ast that removes redundant patterns like:
+    # - None
+    # - [None, ...]
+    # - etc.
+    def _rec_squeeze_none(self, arg_json):
+        if isinstance(arg_json, list):
+            clist = [self._rec_squeeze_none(p) for p in arg_json]
+            if len(clist) == 0:
+                # no element here
+                return None
+            tt = all(list(map(lambda x: x is None, clist)))
+            if tt:
+                # all are None
+                return None
+            return clist
+        elif isinstance(arg_json, dict):
+            cdict = {dkey:self._rec_squeeze_none(arg_json[dkey]) for dkey in arg_json.keys()}
+            if len(cdict) == 0:
+                # no element here
+                return None
+            tt = all(list(map(lambda x: x is None, [cdict[dkey] for dkey in cdict.keys()])))
+            if tt:
+                # all are None
+                return None
+            # if a value for a key is None, remove it
+            for dkey in list(cdict.keys()):
+                if cdict[dkey] is None:
+                    del cdict[dkey]
+            return cdict
+        elif arg_json is None:
+            return None
+        elif isinstance(arg_json, str):
+            # actual value, e.g., fixed keyword
+            return arg_json
+        elif isinstance(arg_json, tuple):
+            # identifier pair: (<IDENTIFIER>, ??)
+            return arg_json
+        else:
+            raise NotImplementedError("Unsupported type, got: {}.".format(type(arg_json)))
 
     # venv: virtual environemnt that provies access to in-scope variable declarations
     def _rec_extract_slim_ast(self, arg_json, inherited_venv):
@@ -480,7 +529,9 @@ class InvariantEnvironment(gym.Env):
     # this oeprates in place
     # returns the current vertex id
     def _rec_construct_edges_and_vertices(self, e2n, e2r, arg_slim_ast, vertex_token_list, edge_list, edge_token_list):
+        # print("# processing: {}".format(arg_slim_ast))
         if isinstance(arg_slim_ast, dict):
+            # print("dict-in")
             tmp_vid0 = len(vertex_token_list)
             vertex_token_list.append("<DICT>") # special token <DICT>
             for dkey in arg_slim_ast.keys():
@@ -492,8 +543,10 @@ class InvariantEnvironment(gym.Env):
                 # reverse link (add if needed)
                 # edge_token_list.append(dkey)
                 # edge_list.append((dcid, tmp_vid0))
+            # print("dict-out")
             return tmp_vid0
         elif isinstance(arg_slim_ast, list):
+            # print("list-in")
             tmp_vid0 = len(vertex_token_list)
             vertex_token_list.append("<LIST>") # special token <LIST>
             children_vertices = [
@@ -506,6 +559,7 @@ class InvariantEnvironment(gym.Env):
                 # reverse link (add if needed)
                 # edge_token_list.append(i)
                 # edge_list.append((i, tmp_vid0))
+            # print("list-out")
             return tmp_vid0
         elif isinstance(arg_slim_ast, str):
             tmp_vid0 = len(vertex_token_list)
