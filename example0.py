@@ -29,14 +29,19 @@ if __name__ == "__main__":
         # version options are: 0.4.26, 0.5.17, 0.6.12
         "contracts": [
             # ("./benchmarks/mint_MI.sol", "0.5.17"),
-            # ("./benchmarks/easy/0x1ccaa0f2a7210d76e1fdec740d5f323e2e1b1672.sol", "0.4.26"),
-            # ("./benchmarks/easy/0x5e6016ae7d7c49d347dcf834860b9f3ee282812b.sol", "0.4.26"),
-            # ("./benchmarks/easy/0x28b5e12cce51f15594b0b91d5b5adaa70f684a02.sol", "0.4.26"),
-            # ("./benchmarks/easy/0x286BDA1413a2Df81731D4930ce2F862a35A609fE.sol", "0.4.26"),
-            # ("./benchmarks/easy/0x6704b673c70de9bf74c8fba4b4bd748f0e2190e1.sol", "0.4.26"),
-            # ("./benchmarks/easy/0x6745fab6801e376cd24f03572b9c9b0d4edddccf.sol", "0.4.26"),
-            # ("./benchmarks/easy/0x8971f9fd7196e5cee2c1032b50f656855af7dd26.sol", "0.4.26"),
-            ("./benchmarks/easy/0x9041fe5b3fdea0f5e4afdc17e75180738d877a01.sol", "0.4.26"),
+            
+            ("./benchmarks/easy/0x1ccaa0f2a7210d76e1fdec740d5f323e2e1b1672.sol", "0.4.26"), # stovars: 9
+            ("./benchmarks/easy/0x28b5e12cce51f15594b0b91d5b5adaa70f684a02.sol", "0.4.26"), # stovars: 9
+            ("./benchmarks/easy/0x6704b673c70de9bf74c8fba4b4bd748f0e2190e1.sol", "0.4.26"), # stovars: 8
+            ("./benchmarks/easy/0x6745fab6801e376cd24f03572b9c9b0d4edddccf.sol", "0.4.26"), # stovars: 8
+            ("./benchmarks/easy/0x8971f9fd7196e5cee2c1032b50f656855af7dd26.sol", "0.4.26"), # stovars: 8
+            ("./benchmarks/easy/0x9041fe5b3fdea0f5e4afdc17e75180738d877a01.sol", "0.4.26"), # stovars: 7
+
+            # ("./benchmarks/easy/0x5e6016ae7d7c49d347dcf834860b9f3ee282812b.sol", "0.4.26"), # stovars: 21
+            # ("./benchmarks/easy/0x286BDA1413a2Df81731D4930ce2F862a35A609fE.sol", "0.4.26"), # stovars: 11
+
+            # fixme: NotImplementedError: Unsupported nodeType, got: UserDefinedTypeName.
+            # ("./benchmarks/easy/0x888666CA69E0f178DED6D75b5726Cee99A87D698.sol", "0.4.26"),
         ],
         "interpreter": interpreter
     }

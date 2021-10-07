@@ -3,6 +3,7 @@ import copy
 import json
 import pickle
 import subprocess
+import random
 import torch
 import numpy as np
 from typing import List, Any, Union, Dict
@@ -38,16 +39,12 @@ class InvariantEnvironment(gym.Env):
     CONTRACT_MAX_EDGES = 10000
 
     def __init__(self, config: Dict[str, Any]):
+        self.config = config
         self.tspec = config["spec"]
         self.builder = D.Builder(self.tspec)
         self.start_type = config["start_type"]
         self.max_step = config["max_step"]
         self.interpreter = config["interpreter"]
-
-        # fixme: choose a contract
-        tmp_id = 0
-        self.contract_path = config["contracts"][tmp_id][0]
-        self.solc_version = config["contracts"][tmp_id][1]
 
         # ================== #
         # vocabulary related #
@@ -96,58 +93,9 @@ class InvariantEnvironment(gym.Env):
         self.token_list = self.base_token_list + self.fixed_action_list
         self.token_dict = {self.token_list[i]:i for i in range(len(self.token_list))}
 
-        # ================ #
-        # contract related #
-        # ================ #
-        # tokenize the target contract
-        self.contract_json = self.get_contract_ast(self.contract_path, self.solc_version)
-        self.contract_static_env, self.contract_slim_ast = self.get_slim_ast(self.contract_json)
-        # print("# slim ast looks like:\n{}".format(self.contract_slim_ast))
-        # e2n: variable name -> node id
-        #      e.g., {'_balances': 0, '_totalSupply': 4, 'account': 5, 'value': 6}
-        # e2r: variable name -> list of node ids that refer to this variable, e.g., 
-        #      {'account': [13, 37, 42],
-        #       '_totalSupply': [22, 24, 28, 31],
-        #       'value': [23, 32, 43],
-        #       '_balances': [36, 41]}
-        # - an variable name is NOT always a stovar
-        # - an identifier is NOT always a variable (it could also be some reserved one like "require")
-        self.contract_e2n, self.contract_e2r, self.contract_igraph, self.contract_root_id = self.slim_ast_to_igraph(self.contract_static_env, self.contract_slim_ast)
-        # self.contract_networkx = igraph.Graph.to_networkx(self.contract_igraph)
-        # map tokens to corresponding ids (no variable will show up since the graph is already anonymous)
-        self.contract_encoded_igraph = self.contract_igraph.copy()
-        for p in self.contract_encoded_igraph.vs:
-            p["token"] = self.token_dict[p["token"]]
-        for p in self.contract_encoded_igraph.es:
-            p["token"] = self.token_dict[p["token"]]
-        self.contract_observed = {
-            "def": [len(self.contract_encoded_igraph.vs), len(self.contract_encoded_igraph.es)],
-            "x": self.pad_to_length(self.contract_encoded_igraph.vs["token"], InvariantEnvironment.CONTRACT_MAX_NODES),
-            "edge_attr": self.pad_to_length(self.contract_encoded_igraph.es["token"], InvariantEnvironment.CONTRACT_MAX_EDGES),
-            "edge_index_src": self.pad_to_length([self.contract_encoded_igraph.es[i].source for i in range(len(self.contract_encoded_igraph.es))], InvariantEnvironment.CONTRACT_MAX_EDGES),
-            "edge_index_tgt": self.pad_to_length([self.contract_encoded_igraph.es[i].target for i in range(len(self.contract_encoded_igraph.es))], InvariantEnvironment.CONTRACT_MAX_EDGES),
-        }
-
-        # get stovars list
-        self.stovar_list = self.get_contract_stovars(self.contract_path)
-        self.stovar_dict = {self.stovar_list[i]:i for i in range(len(self.stovar_list))}
-        # check for enough var production rules in the dsl
-        for i in range(len(self.stovar_list)):
-            _ = self.tspec.get_enum_production_or_raise(self.tspec.get_type("EnumExpr"), "<VAR{}>".format(i))
-        # establish the flex-stovar bindings
-        self.flex_action_to_stovar = {
-            self.tspec.get_enum_production_or_raise(self.tspec.get_type("EnumExpr"), "<VAR{}>".format(i)) : self.stovar_list[i]
-            for i in range(len(self.stovar_list))
-        }
-        self.stovar_to_flex_action = { self.flex_action_to_stovar[dkey]:dkey for dkey in self.flex_action_to_stovar.keys() }
-
-        # ====== #
-        # basics #
-        # ====== #
-        # initialize internal variables
-        self.curr_trinity_inv = None # invariant in trinity node structure
-        # action_seq: represented using ids from action_list, for internal tracking of the environment
-        self.curr_action_seq = None
+        # this caches contract utils for faster switching b
+        # etween cotnracts in training between different rollouts
+        self.cached_contract_utils = {}
         _ = self.reset()
 
         # inherited variables
@@ -176,6 +124,109 @@ class InvariantEnvironment(gym.Env):
             "nn_seq": gym.spaces.Box(0, len(self.token_list)+1000, shape=(self.max_step, ), dtype=np.int32), # for encoding layer, need to + len(sptok_list)
             "all_actions": gym.spaces.Box(0, len(self.token_list)+1000, shape=(len(self.action_list),), dtype=np.int32), # for dynamic action output, remain the same for the same contract
         })
+
+    def setup(self, arg_config, arg_id=None):
+        if arg_id is None:
+            # if no contract is specified, randomly choose one
+            self.current_contract_id = random.choice(list(range(len(arg_config["contracts"]))))
+        else:
+            self.current_contract_id = arg_id
+
+        if self.current_contract_id in self.cached_contract_utils.keys():
+            # directly pull from cache
+            cached = self.cached_contract_utils[self.current_contract_id]
+            self.contract_path = cached["contract_path"]
+            self.solc_version = cached["solc_version"]
+            self.contract_json = cached["contract_json"]
+            self.contract_static_env = cached["contract_static_env"]
+            self.contract_slim_ast = cached["contract_slim_ast"]
+            self.contract_e2n = cached["contract_e2n"]
+            self.contract_e2r = cached["contract_e2r"]
+            self.contract_igraph = cached["contract_igraph"]
+            self.contract_root_id = cached["contract_root_id"]
+            self.contract_encoded_igraph = cached["contract_encoded_igraph"]
+            self.contract_observed = cached["contract_observed"]
+            self.stovar_list = cached["stovar_list"]
+            self.stovar_dict = cached["stovar_dict"]
+            self.flex_action_to_stovar = cached["flex_action_to_stovar"]
+            self.stovar_to_flex_action = cached["stovar_to_flex_action"]
+        else:
+            # need to start a new process
+
+            self.contract_path = arg_config["contracts"][self.current_contract_id][0]
+            self.solc_version = arg_config["contracts"][self.current_contract_id][1]
+
+            # ================ #
+            # contract related #
+            # ================ #
+            # tokenize the target contract
+            self.contract_json = self.get_contract_ast(self.contract_path, self.solc_version)
+            self.contract_static_env, self.contract_slim_ast = self.get_slim_ast(self.contract_json)
+            # print("# slim ast looks like:\n{}".format(self.contract_slim_ast))
+            # e2n: variable name -> node id
+            #      e.g., {'_balances': 0, '_totalSupply': 4, 'account': 5, 'value': 6}
+            # e2r: variable name -> list of node ids that refer to this variable, e.g., 
+            #      {'account': [13, 37, 42],
+            #       '_totalSupply': [22, 24, 28, 31],
+            #       'value': [23, 32, 43],
+            #       '_balances': [36, 41]}
+            # - an variable name is NOT always a stovar
+            # - an identifier is NOT always a variable (it could also be some reserved one like "require")
+            self.contract_e2n, self.contract_e2r, self.contract_igraph, self.contract_root_id = self.slim_ast_to_igraph(self.contract_static_env, self.contract_slim_ast)
+            # self.contract_networkx = igraph.Graph.to_networkx(self.contract_igraph)
+            # map tokens to corresponding ids (no variable will show up since the graph is already anonymous)
+            self.contract_encoded_igraph = self.contract_igraph.copy()
+            for p in self.contract_encoded_igraph.vs:
+                p["token"] = self.token_dict[p["token"]]
+            for p in self.contract_encoded_igraph.es:
+                p["token"] = self.token_dict[p["token"]]
+            self.contract_observed = {
+                "def": [len(self.contract_encoded_igraph.vs), len(self.contract_encoded_igraph.es)],
+                "x": self.pad_to_length(self.contract_encoded_igraph.vs["token"], InvariantEnvironment.CONTRACT_MAX_NODES),
+                "edge_attr": self.pad_to_length(self.contract_encoded_igraph.es["token"], InvariantEnvironment.CONTRACT_MAX_EDGES),
+                "edge_index_src": self.pad_to_length([self.contract_encoded_igraph.es[i].source for i in range(len(self.contract_encoded_igraph.es))], InvariantEnvironment.CONTRACT_MAX_EDGES),
+                "edge_index_tgt": self.pad_to_length([self.contract_encoded_igraph.es[i].target for i in range(len(self.contract_encoded_igraph.es))], InvariantEnvironment.CONTRACT_MAX_EDGES),
+            }
+
+            # get stovars list
+            self.stovar_list = self.get_contract_stovars(self.contract_path)
+            self.stovar_dict = {self.stovar_list[i]:i for i in range(len(self.stovar_list))}
+            # check for enough var production rules in the dsl
+            for i in range(len(self.stovar_list)):
+                _ = self.tspec.get_enum_production_or_raise(self.tspec.get_type("EnumExpr"), "<VAR{}>".format(i))
+            # establish the flex-stovar bindings
+            self.flex_action_to_stovar = {
+                self.tspec.get_enum_production_or_raise(self.tspec.get_type("EnumExpr"), "<VAR{}>".format(i)) : self.stovar_list[i]
+                for i in range(len(self.stovar_list))
+            }
+            self.stovar_to_flex_action = { self.flex_action_to_stovar[dkey]:dkey for dkey in self.flex_action_to_stovar.keys() }
+
+            # store to cache
+            self.cached_contract_utils[self.current_contract_id] = {}
+            cached = self.cached_contract_utils[self.current_contract_id]
+            cached["contract_path"] = self.contract_path
+            cached["solc_version"] = self.solc_version
+            cached["contract_json"] = self.contract_json
+            cached["contract_static_env"] = self.contract_static_env
+            cached["contract_slim_ast"] = self.contract_slim_ast
+            cached["contract_e2n"] = self.contract_e2n
+            cached["contract_e2r"] = self.contract_e2r
+            cached["contract_igraph"] = self.contract_igraph
+            cached["contract_root_id"] = self.contract_root_id
+            cached["contract_encoded_igraph"] = self.contract_encoded_igraph
+            cached["contract_observed"] = self.contract_observed
+            cached["stovar_list"] = self.stovar_list
+            cached["stovar_dict"] = self.stovar_dict
+            cached["flex_action_to_stovar"] = self.flex_action_to_stovar
+            cached["stovar_to_flex_action"] = self.stovar_to_flex_action
+
+        # ====== #
+        # basics #
+        # ====== #
+        # initialize internal variables
+        self.curr_trinity_inv = None # invariant in trinity node structure
+        # action_seq: represented using ids from action_list, for internal tracking of the environment
+        self.curr_action_seq = None
 
     def action_seq_to_nn_seq(self, arg_action_seq):
         # nn_seq: represented using ids from (overflow) embedding, for internal tracking of the neural network
@@ -275,7 +326,7 @@ class InvariantEnvironment(gym.Env):
                 tmp_list.append(curr_lines[i])
         # fixme: remove duplicate, this is not super appropriate
         tmp_list = list(set(tmp_list))
-        print("# stovars are: {}".format(tmp_list))
+        # print("# number of stovars: {}, stovars are: {}".format(len(tmp_list), tmp_list))
         return tmp_list
 
     # fixme: need to adjust the extraction method to account for different contracts
@@ -622,6 +673,7 @@ class InvariantEnvironment(gym.Env):
     def reset(self):
         # note: this should return data structure as defined by self.observation_space
         #       not only the state (but also including any action mask)
+        self.setup(self.config)
         self.curr_trinity_inv = HoleNode(type=self.start_type)
         self.curr_action_seq = []
         return {
@@ -667,8 +719,8 @@ class InvariantEnvironment(gym.Env):
         except:
             # Exception: Types don't match, expect Empty, got Expr
             self.curr_action_seq = self.curr_action_seq + [arg_action_id]
-            print("# [debug][done/exception] seq: {}, inv(before): {}".format(
-                self.curr_action_seq, self.trinity_inv_to_debugging_inv(self.curr_trinity_inv),
+            print("# [debug][done/exception] contract: {}, seq: {}, inv(before): {}".format(
+                self.current_contract_id, self.curr_action_seq, self.trinity_inv_to_debugging_inv(self.curr_trinity_inv),
             ))
             return [
                 {
@@ -726,8 +778,9 @@ class InvariantEnvironment(gym.Env):
             # done, should check the heuristics first
             if not all(heuristic_list):
                 # some heuristics won't fit, prevent this invariant from going to checker
-                print("# [debug][heuristic][hm={}][rm={:.2f}] seq: {}, inv(before): {}".format(
+                print("# [debug][heuristic][hm={}][rm={:.2f}] contract: {}, seq: {}, inv(before): {}".format(
                     tmp_heuristic_multiplier, tmp_repeat_multiplier, 
+                    self.current_contract_id,
                     self.curr_action_seq, self.trinity_inv_to_debugging_inv(self.curr_trinity_inv),
                 ))
                 tmp_action_mask = [0 for _ in range(len(self.action_list))]
@@ -735,8 +788,9 @@ class InvariantEnvironment(gym.Env):
                 tmp_reward = 1.0 * tmp_heuristic_multiplier * tmp_repeat_multiplier
             else:
                 # all good, go to the checker
-                print("# [debug][done][hm={}][rm={:.2f}] seq: {}, inv(before): {}".format(
+                print("# [debug][done][hm={}][rm={:.2f}] contract: {}, seq: {}, inv(before): {}".format(
                     tmp_heuristic_multiplier, tmp_repeat_multiplier, 
+                    self.current_contract_id,
                     self.curr_action_seq, self.trinity_inv_to_debugging_inv(self.curr_trinity_inv),
                 ))
                 tmp_verifier_inv = self.trinity_inv_to_verifier_inv(self.curr_trinity_inv)
@@ -756,8 +810,9 @@ class InvariantEnvironment(gym.Env):
             if self.is_max():
                 self.record_action_seq(self.curr_action_seq)
                 tmp_repeat_multiplier = 1.0/InvariantEnvironment.sampled_action_seqs[tuple(self.curr_action_seq)]
-                print("# [debug][max][hm={}][rm={:.2f}] seq: {}, inv: {}".format(
+                print("# [debug][max][hm={}][rm={:.2f}] contract: {}, seq: {}, inv: {}".format(
                     tmp_heuristic_multiplier, tmp_repeat_multiplier, 
+                    self.current_contract_id,
                     self.curr_action_seq, self.trinity_inv_to_debugging_inv(self.curr_trinity_inv),
                 ))
                 tmp_action_mask = [0 for _ in range(len(self.action_list))]
