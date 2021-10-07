@@ -72,18 +72,18 @@ class InvariantEnvironment(gym.Env):
         self.action_dict = {self.action_list[i]:i for i in range(len(self.action_list))}
 
         self.special_token_list = ["<PAD>", "<ID>", "<REF>"]
-        self.reserved_identifier_token_list = ["require", "assert", "sender", "msg", "super"]
+        self.reserved_identifier_token_list = ["require", "assert", "sender", "msg", "super", "now"]
         self.reserved_vertex_token_list = sorted([
             "<DICT>", "<LIST>",
             "!=", "+", "=", ">=", "<=", "!", "*", "/", "==", "%", "-", ">", "<", "||", "&&", "**",
             "Mapping", 
             "uint", "uint256", "uint8",
+            "bytes",
             "number", "address", "bool", "string",
             "<EVENT>", "<FUNCTION>", # fixme: should probably use <EVENT>?
         ])
-        self.reserved_edge_token_list = sorted([
-            0, 1, 2, 3, 4, 5, 6, 7, 8, 9
-        ]) + sorted([
+        # list index will have int edge token
+        self.reserved_edge_token_list = sorted(list(range(20))) + sorted([
             "arguments", "operator", "leftExpression", "rightExpression", "subExpression", "expression", "leftHandSide", "rightHandSide",
             "baseExpression", "indexExpression", "topType", "keyType", "valueType", "condition", "trueBody", "memberName",
             "components", "initialValue",
@@ -102,7 +102,7 @@ class InvariantEnvironment(gym.Env):
         # tokenize the target contract
         self.contract_json = self.get_contract_ast(self.contract_path, self.solc_version)
         self.contract_static_env, self.contract_slim_ast = self.get_slim_ast(self.contract_json)
-        # print("# slim ast looks like:\n{}".format(self.contract_slim_ast))
+        print("# slim ast looks like:\n{}".format(self.contract_slim_ast))
         # e2n: variable name -> node id
         #      e.g., {'_balances': 0, '_totalSupply': 4, 'account': 5, 'value': 6}
         # e2r: variable name -> list of node ids that refer to this variable, e.g., 
