@@ -251,7 +251,7 @@ class InvariantTGN(TorchModelV2, nn.Module):
         # input("PAUSE")
 
         # (B, action_out_dim)
-        tmp2_inv = self.action_function(tmp1_inv, tmp1_graph_repr, input_dict["obs"]["action_seq"].long())
+        tmp2_inv = self.action_function(tmp1_inv, tmp1_graph_repr, input_dict["obs"]["all_actions"].long())
 
         # apply masking, ref: https://towardsdatascience.com/action-masking-with-rllib-5e4bec5e7505
         # will broadcast with shape
