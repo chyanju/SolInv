@@ -358,6 +358,8 @@ class InvariantEnvironment(gym.Env):
                     # first set the parameters' types into local env
                     for p in arg_json["parameters"]["parameters"]:
                         self._rec_extract_slim_ast(p, inherited_venv) 
+                    for p in arg_json["returnParameters"]["parameters"]:
+                        self._rec_extract_slim_ast(p, inherited_venv)
                     ret_obj = self._rec_extract_slim_ast(arg_json["body"], inherited_venv)
                     # then store the definition to the environment
                     tmp_name = arg_json["name"]
@@ -471,6 +473,9 @@ class InvariantEnvironment(gym.Env):
                         "condition": self._rec_extract_slim_ast(arg_json["condition"], inherited_venv),
                         "body": self._rec_extract_slim_ast(arg_json["body"], inherited_venv),
                     }
+                elif arg_json["nodeType"] == "EmitStatement":
+                    # skip for now
+                    pass
                 elif arg_json["nodeType"] == "PlaceholderStatement":
                     pass
                 elif arg_json["nodeType"] == "UsingForDirective":
