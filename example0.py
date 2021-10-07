@@ -35,7 +35,8 @@ if __name__ == "__main__":
             # ("./benchmarks/easy/0x286BDA1413a2Df81731D4930ce2F862a35A609fE.sol", "0.4.26"),
             # ("./benchmarks/easy/0x6704b673c70de9bf74c8fba4b4bd748f0e2190e1.sol", "0.4.26"),
             # ("./benchmarks/easy/0x6745fab6801e376cd24f03572b9c9b0d4edddccf.sol", "0.4.26"),
-            ("./benchmarks/easy/0x8971f9fd7196e5cee2c1032b50f656855af7dd26.sol", "0.4.26"),
+            # ("./benchmarks/easy/0x8971f9fd7196e5cee2c1032b50f656855af7dd26.sol", "0.4.26"),
+            ("./benchmarks/easy/0x9041fe5b3fdea0f5e4afdc17e75180738d877a01.sol", "0.4.26"),
         ],
         "interpreter": interpreter
     }

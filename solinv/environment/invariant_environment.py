@@ -72,13 +72,13 @@ class InvariantEnvironment(gym.Env):
         self.action_dict = {self.action_list[i]:i for i in range(len(self.action_list))}
 
         self.special_token_list = ["<PAD>", "<ID>", "<REF>"]
-        self.reserved_identifier_token_list = ["require", "assert", "sender", "msg", "super", "now", "length", "this"]
+        self.reserved_identifier_token_list = ["require", "assert", "sender", "msg", "super", "now", "length", "this", "revert", "keccak256", "call"]
         self.reserved_vertex_token_list = sorted([
             "<DICT>", "<LIST>",
-            "!=", "+", "=", ">=", "<=", "!", "*", "/", "==", "%", "-", ">", "<", "||", "&&", "**",
+            "!=", "+", "=", ">=", "<=", "!", "*", "/", "==", "%", "-", ">", "<", "||", "&&", "**", "-=", "+=", "*=", "/=",
             "Mapping", 
             "uint", "uint256", "uint8",
-            "bytes",
+            "bytes", "bytes32", "bytes4",
             "number", "address", "bool", "string",
             "<EVENT>", "<FUNCTION>", # fixme: should probably use <EVENT>?
         ])
@@ -438,6 +438,10 @@ class InvariantEnvironment(gym.Env):
                         ret_obj = "address"
                     elif arg_json["typeName"] == "uint256":
                         ret_obj = "uint256"
+                    elif arg_json["typeName"] == "bytes32":
+                        ret_obj = "bytes32"
+                    elif arg_json["typeName"] == "bytes4":
+                        ret_obj = "bytes4"
                     else:
                         raise NotImplementedError("Unsupported type name, got: {}.".format(arg_json["typeName"]))
                 elif arg_json["nodeType"] == "MemberAccess":
