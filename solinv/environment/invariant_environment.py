@@ -392,6 +392,8 @@ class InvariantEnvironment(gym.Env):
                         ret_obj = "number"
                     elif arg_json["kind"] == "bool":
                         ret_obj = "bool"
+                    elif arg_json["kind"] == "string":
+                        ret_obj = "string"
                     else:
                         raise NotImplementedError("Unsupported literal, got: {}.".format(arg_json))
                 elif arg_json["nodeType"] == "BinaryOperation":
