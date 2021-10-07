@@ -33,7 +33,8 @@ if __name__ == "__main__":
             # ("./benchmarks/easy/0x5e6016ae7d7c49d347dcf834860b9f3ee282812b.sol", "0.4.26"),
             # ("./benchmarks/easy/0x28b5e12cce51f15594b0b91d5b5adaa70f684a02.sol", "0.4.26"),
             # ("./benchmarks/easy/0x286BDA1413a2Df81731D4930ce2F862a35A609fE.sol", "0.4.26"),
-            ("./benchmarks/easy/0x6704b673c70de9bf74c8fba4b4bd748f0e2190e1.sol", "0.4.26"),
+            # ("./benchmarks/easy/0x6704b673c70de9bf74c8fba4b4bd748f0e2190e1.sol", "0.4.26"),
+            ("./benchmarks/easy/0x6745fab6801e376cd24f03572b9c9b0d4edddccf.sol", "0.4.26"),
         ],
         "interpreter": interpreter
     }
