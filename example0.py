@@ -30,7 +30,8 @@ if __name__ == "__main__":
         "contracts": [
             # ("./benchmarks/mint_MI.sol", "0.5.17"),
             # ("./benchmarks/easy/0x1ccaa0f2a7210d76e1fdec740d5f323e2e1b1672.sol", "0.4.26"),
-            ("./benchmarks/easy/0x5e6016ae7d7c49d347dcf834860b9f3ee282812b.sol", "0.4.26"),
+            # ("./benchmarks/easy/0x5e6016ae7d7c49d347dcf834860b9f3ee282812b.sol", "0.4.26"),
+            ("./benchmarks/easy/0x28b5e12cce51f15594b0b91d5b5adaa70f684a02.sol", "0.4.26"),
         ],
         "interpreter": interpreter
     }

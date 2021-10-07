@@ -72,7 +72,7 @@ class InvariantEnvironment(gym.Env):
         self.action_dict = {self.action_list[i]:i for i in range(len(self.action_list))}
 
         self.special_token_list = ["<PAD>", "<ID>", "<REF>"]
-        self.reserved_identifier_token_list = ["require", "assert", "sender", "msg", "super", "now"]
+        self.reserved_identifier_token_list = ["require", "assert", "sender", "msg", "super", "now", "length"]
         self.reserved_vertex_token_list = sorted([
             "<DICT>", "<LIST>",
             "!=", "+", "=", ">=", "<=", "!", "*", "/", "==", "%", "-", ">", "<", "||", "&&", "**",
@@ -86,7 +86,7 @@ class InvariantEnvironment(gym.Env):
         self.reserved_edge_token_list = sorted(list(range(20))) + sorted([
             "arguments", "operator", "leftExpression", "rightExpression", "subExpression", "expression", "leftHandSide", "rightHandSide",
             "baseExpression", "indexExpression", "topType", "keyType", "valueType", "condition", "trueBody", "memberName",
-            "components", "initialValue",
+            "components", "initialValue", "baseType", "body", 
         ])
         # every token in the token list should have a fixed embedding for
         self.base_token_list = self.special_token_list \
@@ -409,6 +409,19 @@ class InvariantEnvironment(gym.Env):
                     }
                 elif arg_json["nodeType"] == "ModifierDefinition":
                     ret_obj = self._rec_extract_slim_ast(arg_json["body"], inherited_venv)
+                elif arg_json["nodeType"] == "ArrayTypeName":
+                    ret_obj = {
+                        "baseType": self._rec_extract_slim_ast(arg_json["baseType"], inherited_venv)
+                    }
+                elif arg_json["nodeType"] == "ForStatement":
+                    # fixme: I'm skipping the initializationExpression and the loopExpression here
+                    # fixme: the processing of initializationExpression and loopExpression are too coarse-grained
+                    self._rec_extract_slim_ast(arg_json["initializationExpression"], inherited_venv) 
+                    self._rec_extract_slim_ast(arg_json["loopExpression"], inherited_venv) 
+                    ret_obj = {
+                        "condition": self._rec_extract_slim_ast(arg_json["condition"], inherited_venv),
+                        "body": self._rec_extract_slim_ast(arg_json["body"], inherited_venv),
+                    }
                 elif arg_json["nodeType"] == "PlaceholderStatement":
                     pass
                 elif arg_json["nodeType"] == "UsingForDirective":
