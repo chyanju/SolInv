@@ -45,6 +45,9 @@ tensorboard --host 0.0.0.0 --logdir=~/ray_results
 
 ## TODO's
 
-- $\checkmark$ Cache the graph for every contract so prevent memory overflow.
-- $\square$ (Optional) Use Slither to generate more compact graph representation.
+- <img src="https://latex.codecogs.com/svg.image?\checkmark" title="\checkmark" /> Cache the graph for every contract to prevent memory overflow.
+- <img src="https://latex.codecogs.com/svg.image?\square" title="\square" /> Improve action masking to rule out redundant flex actions.
+- <img src="https://latex.codecogs.com/svg.image?\square" title="\square" /> Enable GPU support.
+- <img src="https://latex.codecogs.com/svg.image?\square" title="\square" /> Investigate reason of slow back propagation (need GPU?).
+- <img src="https://latex.codecogs.com/svg.image?\square" title="\square" /> (Optional) Use Slither to generate more compact graph representation.
 
