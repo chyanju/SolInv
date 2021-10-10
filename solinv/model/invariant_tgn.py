@@ -151,14 +151,24 @@ class InvariantTGN(TorchModelV2, nn.Module):
                 tmp_x0 = self.cached_contract_utils[tmp_curr_contract_id]["tmp_x0"]
                 tmp_edge_attr0 = self.cached_contract_utils[tmp_curr_contract_id]["tmp_edge_attr0"]
                 tmp_edge_index = self.cached_contract_utils[tmp_curr_contract_id]["tmp_edge_index"]
+                tmp_graph = self.cached_contract_utils[tmp_curr_contract_id]["tmp_graph"]
             else:
                 # not cached, process and cache
                 self.cached_contract_utils[tmp_curr_contract_id] = {}
 
                 # tmp_x0: (num_nodes,)
                 tmp_x0 = arg_contract["x"][b, :tmp_total_nodes].long()
+                # common forward propagation pass
+                # tmp_x1: (num_nodes, token_embedding_dim)
+                tmp_x1 = self.token_embedding(tmp_x0)
+                # print("# tmp_x1 shape is: {}".format(tmp_x1.shape))
+
                 # tmp_edge_attr0: (num_edges,)
                 tmp_edge_attr0 = arg_contract["edge_attr"][b, :tmp_total_edges].long()
+                # tmp_edge_attr1: (num_edges, token_embedding_dim)
+                tmp_edge_attr1 = self.token_embedding(tmp_edge_attr0)
+                # print("# tmp_edge_attr1 shape is: {}".format(tmp_edge_attr1.shape))
+
                 # tmp_edge_index: (2, num_edges)
                 tmp_edge_index = torch.cat(
                     [
@@ -169,25 +179,19 @@ class InvariantTGN(TorchModelV2, nn.Module):
                 ).long()
                 # print("# tmp_edge_index shape is: {}".format(tmp_edge_index.shape))
 
+                tmp_graph = Data(
+                    x=tmp_x1,
+                    edge_index=tmp_edge_index,
+                    edge_attr=tmp_edge_attr1,
+                )
+
                 # store into cache pool
                 self.cached_contract_utils[tmp_curr_contract_id]["tmp_x0"] = tmp_x0
                 self.cached_contract_utils[tmp_curr_contract_id]["tmp_edge_attr0"] = tmp_edge_attr0
                 self.cached_contract_utils[tmp_curr_contract_id]["tmp_edge_index"] = tmp_edge_index
+                self.cached_contract_utils[tmp_curr_contract_id]["tmp_graph"] = tmp_graph
 
-            # common forward propagation pass
-            # tmp_x1: (num_nodes, token_embedding_dim)
-            tmp_x1 = self.token_embedding(tmp_x0)
-            # print("# tmp_x1 shape is: {}".format(tmp_x1.shape))
-
-            # tmp_edge_attr1: (num_edges, token_embedding_dim)
-            tmp_edge_attr1 = self.token_embedding(tmp_edge_attr0)
-            # print("# tmp_edge_attr1 shape is: {}".format(tmp_edge_attr1.shape))
-
-            data_list.append(Data(
-                x=tmp_x1,
-                edge_index=tmp_edge_index,
-                edge_attr=tmp_edge_attr1,
-            ))
+            data_list.append(tmp_graph)
 
         return data_list
 
