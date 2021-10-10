@@ -42,12 +42,14 @@ tensorboard --host 0.0.0.0 --logdir=~/ray_results
 
 - https://docs.ray.io/en/latest/rllib-training.html#customizing-exploration-behavior
 - https://docs.ray.io/en/latest/rllib-training.html#getting-started
+- https://codepen.io/sosuke/pen/Pjoqqp
 
 ## TODO's
 
-- <img src="https://latex.codecogs.com/svg.image?\checkmark" title="\checkmark" /> Cache the graph for every contract to prevent memory overflow.
-- <img src="https://latex.codecogs.com/svg.image?\square" title="\square" /> Improve action masking to rule out redundant flex actions.
-- <img src="https://latex.codecogs.com/svg.image?\square" title="\square" /> Enable GPU support.
-- <img src="https://latex.codecogs.com/svg.image?\square" title="\square" /> Investigate reason of slow back propagation (need GPU?).
-- <img src="https://latex.codecogs.com/svg.image?\square" title="\square" /> (Optional) Use Slither to generate more compact graph representation.
+- ✓ Cache the graph for every contract.
+- ▢ Investigate into the memory overflow issue.
+- ▢ Improve action masking to rule out redundant flex actions.
+- ▢ Enable GPU support.
+- ▢ Investigate reason of slow back propagation (need GPU?).
+- ▢ (Optional) Use Slither to generate more compact graph representation.
 

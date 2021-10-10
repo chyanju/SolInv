@@ -154,6 +154,7 @@ class InvariantTGN(TorchModelV2, nn.Module):
             else:
                 # not cached, process and cache
                 self.cached_contract_utils[tmp_curr_contract_id] = {}
+
                 # tmp_x0: (num_nodes,)
                 tmp_x0 = arg_contract["x"][b, :tmp_total_nodes].long()
                 # tmp_edge_attr0: (num_edges,)

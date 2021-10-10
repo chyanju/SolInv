@@ -47,7 +47,7 @@ if __name__ == "__main__":
     # need to construct the vocab first to provide parameters for nn
     tmp_environment = InvariantEnvironment(config=env_config)
 
-    ray.init(local_mode=True)
+    ray.init(local_mode=True, object_store_memory=5*(10**9))
     ModelCatalog.register_custom_model("invariant_tgn", InvariantTGN)
 
     ppo_config = ppo.DEFAULT_CONFIG.copy()
