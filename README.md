@@ -43,3 +43,8 @@ tensorboard --host 0.0.0.0 --logdir=~/ray_results
 - https://docs.ray.io/en/latest/rllib-training.html#customizing-exploration-behavior
 - https://docs.ray.io/en/latest/rllib-training.html#getting-started
 
+## TODO's
+
+- $\checkmark$ Cache the graph for every contract so prevent memory overflow.
+- $\square$ (Optional) Use Slither to generate more compact graph representation.
+

@@ -72,6 +72,12 @@ class InvariantTGN(TorchModelV2, nn.Module):
 
         self._invariant_features = None
 
+        # this caches contract utils for faster switching
+        # between cotnracts in training between different rollouts
+        # and also prevents memory overflow from implicit tensor copy by calling
+        # the type conversion methods every time (e.g., `tensor.long()`)
+        self.cached_contract_utils = {}
+
     @override(TorchModelV2)
     def value_function(self):
         assert self._invariant_features is not None, "self._invariant_features is None, call forward() first."
@@ -113,7 +119,7 @@ class InvariantTGN(TorchModelV2, nn.Module):
         # note that batch size could be larger than 1 (multiple instances in a batch), need to address this
         # print("# contract def is: {}".format(arg_contract["def"]))
 
-        # def: (B, 2)
+        # def: (B, 3)
         # x: (B, max_nodes)
         # edge_attr: (B, max_edges)
         # edge_index_src: (B, max_edges)
@@ -131,27 +137,47 @@ class InvariantTGN(TorchModelV2, nn.Module):
         # use the tensor directly
         for b in range(tmp_batch_size):
 
-            tmp_total_nodes = tmp_def[b, 0]
-            tmp_total_edges = tmp_def[b, 1]
+            # basic def info
+            tmp_curr_contract_id = tmp_def[b, 0]
+            tmp_total_nodes = tmp_def[b, 1]
+            tmp_total_edges = tmp_def[b, 2]
 
-            # tmp_x0: (num_nodes,)
-            tmp_x0 = arg_contract["x"][b, :tmp_total_nodes].long()
+            # check for caching
+            tmp_x0 = None # (num_nodes, )
+            tmp_edge_attr0 = None # (num_edges, )
+            tmp_edge_index = None # (2, num_edges)
+            if tmp_curr_contract_id in self.cached_contract_utils.keys():
+                # already cached, pull from cached pool
+                tmp_x0 = self.cached_contract_utils[tmp_curr_contract_id]["tmp_x0"]
+                tmp_edge_attr0 = self.cached_contract_utils[tmp_curr_contract_id]["tmp_edge_attr0"]
+                tmp_edge_index = self.cached_contract_utils[tmp_curr_contract_id]["tmp_edge_index"]
+            else:
+                # not cached, process and cache
+                self.cached_contract_utils[tmp_curr_contract_id] = {}
+                # tmp_x0: (num_nodes,)
+                tmp_x0 = arg_contract["x"][b, :tmp_total_nodes].long()
+                # tmp_edge_attr0: (num_edges,)
+                tmp_edge_attr0 = arg_contract["edge_attr"][b, :tmp_total_edges].long()
+                # tmp_edge_index: (2, num_edges)
+                tmp_edge_index = torch.cat(
+                    [
+                        arg_contract["edge_index_src"][b, :tmp_total_edges].unsqueeze(dim=0), 
+                        arg_contract["edge_index_tgt"][b, :tmp_total_edges].unsqueeze(dim=0),
+                    ],
+                    dim=0,
+                ).long()
+                # print("# tmp_edge_index shape is: {}".format(tmp_edge_index.shape))
+
+                # store into cache pool
+                self.cached_contract_utils[tmp_curr_contract_id]["tmp_x0"] = tmp_x0
+                self.cached_contract_utils[tmp_curr_contract_id]["tmp_edge_attr0"] = tmp_edge_attr0
+                self.cached_contract_utils[tmp_curr_contract_id]["tmp_edge_index"] = tmp_edge_index
+
+            # common forward propagation pass
             # tmp_x1: (num_nodes, token_embedding_dim)
             tmp_x1 = self.token_embedding(tmp_x0)
             # print("# tmp_x1 shape is: {}".format(tmp_x1.shape))
 
-            # tmp_edge_index: (2, num_edges)
-            tmp_edge_index = torch.cat(
-                [
-                    arg_contract["edge_index_src"][b, :tmp_total_edges].unsqueeze(dim=0), 
-                    arg_contract["edge_index_tgt"][b, :tmp_total_edges].unsqueeze(dim=0),
-                ],
-                dim=0,
-            ).long()
-            # print("# tmp_edge_index shape is: {}".format(tmp_edge_index.shape))
-
-            # tmp_edge_attr0: (num_edges,)
-            tmp_edge_attr0 = arg_contract["edge_attr"][b, :tmp_total_edges].long()
             # tmp_edge_attr1: (num_edges, token_embedding_dim)
             tmp_edge_attr1 = self.token_embedding(tmp_edge_attr0)
             # print("# tmp_edge_attr1 shape is: {}".format(tmp_edge_attr1.shape))

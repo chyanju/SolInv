@@ -37,6 +37,7 @@ class InvariantEnvironment(gym.Env):
     sampled_action_seqs = {}
     CONTRACT_MAX_NODES = 10000
     CONTRACT_MAX_EDGES = 10000
+    CONTRACT_MAX_IDS   = 100
 
     def __init__(self, config: Dict[str, Any]):
         self.config = config
@@ -93,9 +94,10 @@ class InvariantEnvironment(gym.Env):
         self.token_list = self.base_token_list + self.fixed_action_list
         self.token_dict = {self.token_list[i]:i for i in range(len(self.token_list))}
 
-        # this caches contract utils for faster switching b
-        # etween cotnracts in training between different rollouts
+        # this caches contract utils for faster switching
+        # between cotnracts in training between different rollouts
         self.cached_contract_utils = {}
+        self.curr_contract_id = None # need to reset
         _ = self.reset()
 
         # inherited variables
@@ -105,10 +107,10 @@ class InvariantEnvironment(gym.Env):
         self.observation_space = gym.spaces.Dict({
             "start": gym.spaces.Box(0,1,shape=(1,),dtype=np.int32),
             "contract": gym.spaces.Dict({
-                # specifies: [num_nodes, num_edges]
+                # specifies: [contract_id, num_nodes, num_edges]
                 "def": gym.spaces.Box(
-                    0, max(InvariantEnvironment.CONTRACT_MAX_NODES, InvariantEnvironment.CONTRACT_MAX_EDGES), 
-                    shape=(2,), dtype=np.int32
+                    0, max(InvariantEnvironment.CONTRACT_MAX_IDS, InvariantEnvironment.CONTRACT_MAX_NODES, InvariantEnvironment.CONTRACT_MAX_EDGES), 
+                    shape=(3,), dtype=np.int32
                 ),
                 # (num_edges,): node features, every node has 1 token as feature
                 "x": gym.spaces.Box(0, len(self.token_list)-1, shape=(InvariantEnvironment.CONTRACT_MAX_NODES,), dtype=np.int32),
@@ -128,13 +130,13 @@ class InvariantEnvironment(gym.Env):
     def setup(self, arg_config, arg_id=None):
         if arg_id is None:
             # if no contract is specified, randomly choose one
-            self.current_contract_id = random.choice(list(range(len(arg_config["contracts"]))))
+            self.curr_contract_id = random.choice(list(range(len(arg_config["contracts"]))))
         else:
-            self.current_contract_id = arg_id
+            self.curr_contract_id = arg_id
 
-        if self.current_contract_id in self.cached_contract_utils.keys():
+        if self.curr_contract_id in self.cached_contract_utils.keys():
             # directly pull from cache
-            cached = self.cached_contract_utils[self.current_contract_id]
+            cached = self.cached_contract_utils[self.curr_contract_id]
             self.contract_path = cached["contract_path"]
             self.solc_version = cached["solc_version"]
             self.contract_json = cached["contract_json"]
@@ -153,8 +155,8 @@ class InvariantEnvironment(gym.Env):
         else:
             # need to start a new process
 
-            self.contract_path = arg_config["contracts"][self.current_contract_id][0]
-            self.solc_version = arg_config["contracts"][self.current_contract_id][1]
+            self.contract_path = arg_config["contracts"][self.curr_contract_id][0]
+            self.solc_version = arg_config["contracts"][self.curr_contract_id][1]
 
             # ================ #
             # contract related #
@@ -181,7 +183,7 @@ class InvariantEnvironment(gym.Env):
             for p in self.contract_encoded_igraph.es:
                 p["token"] = self.token_dict[p["token"]]
             self.contract_observed = {
-                "def": [len(self.contract_encoded_igraph.vs), len(self.contract_encoded_igraph.es)],
+                "def": [self.curr_contract_id, len(self.contract_encoded_igraph.vs), len(self.contract_encoded_igraph.es)],
                 "x": self.pad_to_length(self.contract_encoded_igraph.vs["token"], InvariantEnvironment.CONTRACT_MAX_NODES),
                 "edge_attr": self.pad_to_length(self.contract_encoded_igraph.es["token"], InvariantEnvironment.CONTRACT_MAX_EDGES),
                 "edge_index_src": self.pad_to_length([self.contract_encoded_igraph.es[i].source for i in range(len(self.contract_encoded_igraph.es))], InvariantEnvironment.CONTRACT_MAX_EDGES),
@@ -202,8 +204,8 @@ class InvariantEnvironment(gym.Env):
             self.stovar_to_flex_action = { self.flex_action_to_stovar[dkey]:dkey for dkey in self.flex_action_to_stovar.keys() }
 
             # store to cache
-            self.cached_contract_utils[self.current_contract_id] = {}
-            cached = self.cached_contract_utils[self.current_contract_id]
+            self.cached_contract_utils[self.curr_contract_id] = {}
+            cached = self.cached_contract_utils[self.curr_contract_id]
             cached["contract_path"] = self.contract_path
             cached["solc_version"] = self.solc_version
             cached["contract_json"] = self.contract_json
@@ -720,7 +722,7 @@ class InvariantEnvironment(gym.Env):
             # Exception: Types don't match, expect Empty, got Expr
             self.curr_action_seq = self.curr_action_seq + [arg_action_id]
             print("# [debug][done/exception] contract: {}, seq: {}, inv(before): {}".format(
-                self.current_contract_id, self.curr_action_seq, self.trinity_inv_to_debugging_inv(self.curr_trinity_inv),
+                self.curr_contract_id, self.curr_action_seq, self.trinity_inv_to_debugging_inv(self.curr_trinity_inv),
             ))
             return [
                 {
@@ -780,7 +782,7 @@ class InvariantEnvironment(gym.Env):
                 # some heuristics won't fit, prevent this invariant from going to checker
                 print("# [debug][heuristic][hm={}][rm={:.2f}] contract: {}, seq: {}, inv(before): {}".format(
                     tmp_heuristic_multiplier, tmp_repeat_multiplier, 
-                    self.current_contract_id,
+                    self.curr_contract_id,
                     self.curr_action_seq, self.trinity_inv_to_debugging_inv(self.curr_trinity_inv),
                 ))
                 tmp_action_mask = [0 for _ in range(len(self.action_list))]
@@ -790,7 +792,7 @@ class InvariantEnvironment(gym.Env):
                 # all good, go to the checker
                 print("# [debug][done][hm={}][rm={:.2f}] contract: {}, seq: {}, inv(before): {}".format(
                     tmp_heuristic_multiplier, tmp_repeat_multiplier, 
-                    self.current_contract_id,
+                    self.curr_contract_id,
                     self.curr_action_seq, self.trinity_inv_to_debugging_inv(self.curr_trinity_inv),
                 ))
                 tmp_verifier_inv = self.trinity_inv_to_verifier_inv(self.curr_trinity_inv)
@@ -812,7 +814,7 @@ class InvariantEnvironment(gym.Env):
                 tmp_repeat_multiplier = 1.0/InvariantEnvironment.sampled_action_seqs[tuple(self.curr_action_seq)]
                 print("# [debug][max][hm={}][rm={:.2f}] contract: {}, seq: {}, inv: {}".format(
                     tmp_heuristic_multiplier, tmp_repeat_multiplier, 
-                    self.current_contract_id,
+                    self.curr_contract_id,
                     self.curr_action_seq, self.trinity_inv_to_debugging_inv(self.curr_trinity_inv),
                 ))
                 tmp_action_mask = [0 for _ in range(len(self.action_list))]

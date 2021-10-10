@@ -15,7 +15,6 @@ import solinv.tyrell.spec as S
 import solinv.tyrell.dsl as D
 from solinv.tyrell.interpreter import InvariantInterpreter
 from solinv.environment import InvariantEnvironment
-# from solinv.model import InvariantGRU, SimpleInvariantGRU
 from solinv.model import InvariantTGN
 
 if __name__ == "__main__":
@@ -49,8 +48,6 @@ if __name__ == "__main__":
     tmp_environment = InvariantEnvironment(config=env_config)
 
     ray.init(local_mode=True)
-    # ModelCatalog.register_custom_model("invariant_gru", InvariantGRU)
-    # ModelCatalog.register_custom_model("invariant_gru", SimpleInvariantGRU)
     ModelCatalog.register_custom_model("invariant_tgn", InvariantTGN)
 
     ppo_config = ppo.DEFAULT_CONFIG.copy()
@@ -78,8 +75,6 @@ if __name__ == "__main__":
     
     for i in range(100):
         print("# i={}".format(i))
-        # agent.get_policy().model.contract_igraph_ids = tmp_environment.contract_igraph_ids
-        # agent.get_policy().model = None
         res = agent.train()
         print(pretty_print(res))
 
