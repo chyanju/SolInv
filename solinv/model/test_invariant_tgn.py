@@ -13,7 +13,7 @@ from torch_geometric.nn import TransformerConv
 
 import traceback
 
-class InvariantTGN(TorchModelV2, nn.Module):
+class TestInvariantTGN(TorchModelV2, nn.Module):
     def __init__(self, obs_space, action_space, num_outputs, model_config, name):
         nn.Module.__init__(self)
         super().__init__(obs_space, action_space, num_outputs, model_config, name)
@@ -140,62 +140,10 @@ class InvariantTGN(TorchModelV2, nn.Module):
         return data_list
 
     def mixed_embedding(self, arg_inv, arg_graph_repr):
-        # take over the forward method of the mixed embedding
-        # for (fixed) base tokens, use the original token embedding directly
-        # for flex action/token, locate to the corresponding node representation in the provided graph
-        # note that batch size could be larger than 1 (multiple instances in a batch), need to address this
-
-        # arg_inv: (B, max_step)
-        # arg_graph_repr: [(num_nodes, token_embedding_dim), ...]
         tmp_batch_size = arg_inv.shape[0]
-
-        # # debug
-        # # process the fixed part
-        # tmp_fixed_mask = arg_inv >= self.config["num_token_embeddings"]
-        # # tmp_fixed_inv = arg_inv.clone() # use clone to keep the computation graph
-        # tmp_fixed_inv = arg_inv
-        # tmp_fixed_inv[tmp_fixed_mask] = self.token_embedding.padding_idx # set the node part to <PAD>, which won't be learned
-        # # tmp_fixed_embedding: (1, max_step, token_embedding_dim)
-        # tmp_fixed_embedding = self.token_embedding(tmp_fixed_inv)
-        # return tmp_fixed_embedding
-
-        result_list = []
-        for b in range(tmp_batch_size):
-            # note-important
-            # tmp_inv: (1, max_step) if arg_inv is action_seq
-            #          (1, len(action_list)) if arg_inv is all_actions
-            tmp_inv = arg_inv[b:b+1, :]
-
-            # process the fixed part
-            tmp_fixed_mask = tmp_inv >= self.config["num_token_embeddings"]
-            tmp_fixed_inv = tmp_inv.clone() # use clone to keep the computation graph
-            tmp_fixed_inv[tmp_fixed_mask] = self.token_embedding.padding_idx # set the node part to <PAD>, which won't be learned
-            # tmp_fixed_embedding: (1, max_step, token_embedding_dim)
-            tmp_fixed_embedding = self.token_embedding(tmp_fixed_inv)
-
-            # process the flex part
-            tmp_flex_mask = ~tmp_fixed_mask
-            tmp_flex_inv = tmp_inv.clone()
-            # note: here we insert 1 additional padding node into position 0
-            tmp_flex_inv[tmp_flex_mask] = 0 + self.config["num_token_embeddings"] - 1
-            # tmp_flex_embedding: (1, max_step, token_embedding_dim)
-            tmp_flex_embedding = F.embedding(
-                input=tmp_flex_inv-self.config["num_token_embeddings"]+1, weight=arg_graph_repr[b], padding_idx=0,
-                max_norm=self.token_embedding.max_norm, norm_type=self.token_embedding.norm_type,
-                scale_grad_by_freq=self.token_embedding.scale_grad_by_freq, sparse=self.token_embedding.sparse,
-            )
-
-            # print("# tmp_fixed_embedding shape is: {}".format(tmp_fixed_embedding.shape))
-            # print("# tmp_flex_embedding shape is: {}".format(tmp_flex_embedding.shape))
-
-            # then add them up
-            # tmp_inv_embedding: (1, max_step, token_embedding_dim)
-            tmp_inv_embedding = tmp_fixed_embedding + tmp_flex_embedding
-            result_list.append(tmp_inv_embedding)
-
-        # result_embedding: (B, max_step, token_embedding_dim)
-        result_embedding = torch.cat(result_list, dim=0)
-        return result_embedding
+        tmp0 = arg_inv.shape[1]
+        # return torch.zeros(tmp_batch_size, tmp0, self.config["token_embedding_dim"])
+        return torch.ones(tmp_batch_size, tmp0, self.config["token_embedding_dim"])
 
     @override(TorchModelV2)
     def forward(self, input_dict, state, seq_lens):
@@ -213,13 +161,14 @@ class InvariantTGN(TorchModelV2, nn.Module):
         # first encode the problem graph
         # ==============================
 
-        # tmp0_graph_data: [(B, )]
-        tmp0_graph_data = self.recover_graph_date(input_dict["obs"]["contract_id"])
-        # tmp1_graph_repr: [(num_nodes, token_embedding_dim), ...]
-        tmp1_graph_repr = [
-            F.relu(self.contract_conv( p["x"], p["edge_index"], p["edge_attr"] ))
-            for p in tmp0_graph_data
-        ]
+        # # tmp0_graph_data: [(B, )]
+        # tmp0_graph_data = self.recover_graph_date(input_dict["obs"]["contract_id"])
+        # # tmp1_graph_repr: [(num_nodes, token_embedding_dim), ...]
+        # tmp1_graph_repr = [
+        #     F.relu(self.contract_conv( p["x"], p["edge_index"], p["edge_attr"] ))
+        #     for p in tmp0_graph_data
+        # ]
+        tmp1_graph_repr = None
 
         # then encode the state
         # =====================

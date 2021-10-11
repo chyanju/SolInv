@@ -51,6 +51,7 @@ tensorboard --host 0.0.0.0 --logdir=~/ray_results
 - ✓ Investigate into the memory overflow issue.
 - ✓ Improve action masking to rule out redundant flex actions.
 - ▢ Enable GPU support.
+- ▢ Switch to a more precise DSL.
 - ▢ Investigate reason of slow back propagation (need GPU?).
-- ▢ (Optional) Use Slither to generate more compact graph representation.
+- ▢ Use Slither to generate more compact graph representation.
 

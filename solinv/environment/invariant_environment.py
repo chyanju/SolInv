@@ -685,8 +685,8 @@ class InvariantEnvironment(gym.Env):
         print()
         result = list(map(int, [hard_ok, hard, soft_ok, soft]))
         if result[0]+result[2]==result[1]+result[3]:
-            input("Found the ground truth!")
-            # pass
+            # input("Found the ground truth!")
+            pass
         return result
 
     # the action id here is for the action_list / action space for sure    
