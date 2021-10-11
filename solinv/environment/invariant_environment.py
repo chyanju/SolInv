@@ -37,8 +37,6 @@ class InvariantEnvironment(gym.Env):
     sampled_action_seqs = {}
     cached_contract_utils = {}
 
-    CONTRACT_MAX_NODES = 10000
-    CONTRACT_MAX_EDGES = 10000
     CONTRACT_MAX_IDS   = 100
 
     def __init__(self, config: Dict[str, Any]):
@@ -107,21 +105,6 @@ class InvariantEnvironment(gym.Env):
         self.action_space = gym.spaces.Discrete(len(self.action_list))
         self.observation_space = gym.spaces.Dict({
             "start": gym.spaces.Box(0,1,shape=(1,),dtype=np.int32),
-            # "contract": gym.spaces.Dict({
-            #     # specifies: [contract_id, num_nodes, num_edges]
-            #     "def": gym.spaces.Box(
-            #         0, max(InvariantEnvironment.CONTRACT_MAX_IDS, InvariantEnvironment.CONTRACT_MAX_NODES, InvariantEnvironment.CONTRACT_MAX_EDGES), 
-            #         shape=(3,), dtype=np.int32
-            #     ),
-            #     # (num_edges,): node features, every node has 1 token as feature
-            #     "x": gym.spaces.Box(0, len(self.token_list)-1, shape=(InvariantEnvironment.CONTRACT_MAX_NODES,), dtype=np.int32),
-            #     # valid shape (num_edges,): edge features, every edge has 1 token as feature
-            #     "edge_attr": gym.spaces.Box(0, len(self.token_list)-1, shape=(InvariantEnvironment.CONTRACT_MAX_EDGES,), dtype=np.int32),
-            #     # valid shape (num_edges,): edge definitions - source
-            #     "edge_index_src": gym.spaces.Box(0, InvariantEnvironment.CONTRACT_MAX_NODES-1, shape=(InvariantEnvironment.CONTRACT_MAX_EDGES,), dtype=np.int32),
-            #     # valid shape (num_edges,): edge definitions - target
-            #     "edge_index_tgt": gym.spaces.Box(0, InvariantEnvironment.CONTRACT_MAX_NODES-1, shape=(InvariantEnvironment.CONTRACT_MAX_EDGES,), dtype=np.int32),
-            # }),
             "contract_id": gym.spaces.Box(0, InvariantEnvironment.CONTRACT_MAX_IDS, shape=(1,), dtype=np.int32),
             "action_mask": gym.spaces.Box(0, 1, shape=(len(self.action_list),), dtype=np.int32), # for output layer, no need to + len(sptok_list)
             # fixme: 1000 should be MAX_NODES
@@ -278,9 +261,11 @@ class InvariantEnvironment(gym.Env):
     def record_action_seq(self, arg_action_seq):
         # add the sequence to the class level recorder and count
         tup_seq = tuple(arg_action_seq)
-        if tup_seq not in InvariantEnvironment.sampled_action_seqs.keys():
-            InvariantEnvironment.sampled_action_seqs[tup_seq] = 0
-        InvariantEnvironment.sampled_action_seqs[tup_seq] += 1
+        if self.curr_contract_id not in InvariantEnvironment.sampled_action_seqs.keys():
+            InvariantEnvironment.sampled_action_seqs[self.curr_contract_id] = {}
+        if tup_seq not in InvariantEnvironment.sampled_action_seqs[self.curr_contract_id].keys():
+            InvariantEnvironment.sampled_action_seqs[self.curr_contract_id][tup_seq] = 0
+        InvariantEnvironment.sampled_action_seqs[self.curr_contract_id][tup_seq] += 1
 
     def get_contract_ast(self, arg_path, arg_solc_version):
         cmd_set = subprocess.run("solc-select use {}".format(arg_solc_version), shell=True, capture_output=True)
@@ -770,7 +755,7 @@ class InvariantEnvironment(gym.Env):
         # satisfy all partial heuristics
         if tmp_done:
             self.record_action_seq(self.curr_action_seq)
-            tmp_repeat_multiplier = 1.0/InvariantEnvironment.sampled_action_seqs[tuple(self.curr_action_seq)]
+            tmp_repeat_multiplier = 1.0/InvariantEnvironment.sampled_action_seqs[self.curr_contract_id][tuple(self.curr_action_seq)]
             # done, should check the heuristics first
             if not all(heuristic_list):
                 # some heuristics won't fit, prevent this invariant from going to checker
@@ -805,7 +790,7 @@ class InvariantEnvironment(gym.Env):
         else:
             if self.is_max():
                 self.record_action_seq(self.curr_action_seq)
-                tmp_repeat_multiplier = 1.0/InvariantEnvironment.sampled_action_seqs[tuple(self.curr_action_seq)]
+                tmp_repeat_multiplier = 1.0/InvariantEnvironment.sampled_action_seqs[self.curr_contract_id][tuple(self.curr_action_seq)]
                 print("# [debug][max][hm={}][rm={:.2f}] contract: {}, seq: {}, inv: {}".format(
                     tmp_heuristic_multiplier, tmp_repeat_multiplier, 
                     self.curr_contract_id,
