@@ -47,6 +47,7 @@ tensorboard --host 0.0.0.0 --logdir=~/ray_results
 ## TODO's
 
 - ✓ Cache the graph for every contract.
+- ▢ Repeat multipliers should be using different denominators across contracts.
 - ▢ Investigate into the memory overflow issue.
 - ▢ Improve action masking to rule out redundant flex actions.
 - ▢ Enable GPU support.

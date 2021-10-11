@@ -191,8 +191,6 @@ class InvariantTGN(TorchModelV2, nn.Module):
             tmp_inv_embedding = tmp_fixed_embedding + tmp_flex_embedding
             result_list.append(tmp_inv_embedding)
 
-            result_list.append(tmp_fixed_embedding)
-
         # result_embedding: (B, max_step, token_embedding_dim)
         result_embedding = torch.cat(result_list, dim=0)
         return result_embedding
