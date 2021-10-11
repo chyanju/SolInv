@@ -629,7 +629,14 @@ class InvariantEnvironment(gym.Env):
 
     def get_action_mask(self, arg_type):
         # get action mask that allows for a specific type
-        return [1 if arg_type == p.lhs else 0 for p in self.action_list]
+        # also mask out redundant variable productions
+        tmp_fixed_mask = [1 if arg_type == p.lhs else 0 for p in self.fixed_action_list]
+        tmp_flex_mask = [
+            1 if i < len(self.stovar_list) and arg_type == self.flex_action_list[i].lhs else 0 
+            for i in range(len(self.flex_action_list))
+        ]
+        # the order is: action_list = fixed_action_list + flex_action_list
+        return tmp_fixed_mask + tmp_flex_mask
 
     def is_max(self):
         '''
@@ -678,8 +685,8 @@ class InvariantEnvironment(gym.Env):
         print()
         result = list(map(int, [hard_ok, hard, soft_ok, soft]))
         if result[0]+result[2]==result[1]+result[3]:
-            # input("Found the ground truth!")
-            pass
+            input("Found the ground truth!")
+            # pass
         return result
 
     # the action id here is for the action_list / action space for sure    

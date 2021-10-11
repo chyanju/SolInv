@@ -48,8 +48,8 @@ tensorboard --host 0.0.0.0 --logdir=~/ray_results
 
 - ✓ Cache the graph for every contract.
 - ✓ Repeat multipliers should be using different denominators across contracts.
-- ▢ Investigate into the memory overflow issue.
-- ▢ Improve action masking to rule out redundant flex actions.
+- ✓ Investigate into the memory overflow issue.
+- ✓ Improve action masking to rule out redundant flex actions.
 - ▢ Enable GPU support.
 - ▢ Investigate reason of slow back propagation (need GPU?).
 - ▢ (Optional) Use Slither to generate more compact graph representation.
