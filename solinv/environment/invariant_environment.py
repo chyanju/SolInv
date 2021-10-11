@@ -35,6 +35,8 @@ class InvariantEnvironment(gym.Env):
     # note: class static variable
     #       used to track previously sampled sequences, for coverage based exploration
     sampled_action_seqs = {}
+    cached_contract_utils = {}
+
     CONTRACT_MAX_NODES = 10000
     CONTRACT_MAX_EDGES = 10000
     CONTRACT_MAX_IDS   = 100
@@ -96,7 +98,6 @@ class InvariantEnvironment(gym.Env):
 
         # this caches contract utils for faster switching
         # between cotnracts in training between different rollouts
-        self.cached_contract_utils = {}
         self.curr_contract_id = None # need to reset
         _ = self.reset()
 
@@ -106,21 +107,22 @@ class InvariantEnvironment(gym.Env):
         self.action_space = gym.spaces.Discrete(len(self.action_list))
         self.observation_space = gym.spaces.Dict({
             "start": gym.spaces.Box(0,1,shape=(1,),dtype=np.int32),
-            "contract": gym.spaces.Dict({
-                # specifies: [contract_id, num_nodes, num_edges]
-                "def": gym.spaces.Box(
-                    0, max(InvariantEnvironment.CONTRACT_MAX_IDS, InvariantEnvironment.CONTRACT_MAX_NODES, InvariantEnvironment.CONTRACT_MAX_EDGES), 
-                    shape=(3,), dtype=np.int32
-                ),
-                # (num_edges,): node features, every node has 1 token as feature
-                "x": gym.spaces.Box(0, len(self.token_list)-1, shape=(InvariantEnvironment.CONTRACT_MAX_NODES,), dtype=np.int32),
-                # valid shape (num_edges,): edge features, every edge has 1 token as feature
-                "edge_attr": gym.spaces.Box(0, len(self.token_list)-1, shape=(InvariantEnvironment.CONTRACT_MAX_EDGES,), dtype=np.int32),
-                # valid shape (num_edges,): edge definitions - source
-                "edge_index_src": gym.spaces.Box(0, InvariantEnvironment.CONTRACT_MAX_NODES-1, shape=(InvariantEnvironment.CONTRACT_MAX_EDGES,), dtype=np.int32),
-                # valid shape (num_edges,): edge definitions - target
-                "edge_index_tgt": gym.spaces.Box(0, InvariantEnvironment.CONTRACT_MAX_NODES-1, shape=(InvariantEnvironment.CONTRACT_MAX_EDGES,), dtype=np.int32),
-            }),
+            # "contract": gym.spaces.Dict({
+            #     # specifies: [contract_id, num_nodes, num_edges]
+            #     "def": gym.spaces.Box(
+            #         0, max(InvariantEnvironment.CONTRACT_MAX_IDS, InvariantEnvironment.CONTRACT_MAX_NODES, InvariantEnvironment.CONTRACT_MAX_EDGES), 
+            #         shape=(3,), dtype=np.int32
+            #     ),
+            #     # (num_edges,): node features, every node has 1 token as feature
+            #     "x": gym.spaces.Box(0, len(self.token_list)-1, shape=(InvariantEnvironment.CONTRACT_MAX_NODES,), dtype=np.int32),
+            #     # valid shape (num_edges,): edge features, every edge has 1 token as feature
+            #     "edge_attr": gym.spaces.Box(0, len(self.token_list)-1, shape=(InvariantEnvironment.CONTRACT_MAX_EDGES,), dtype=np.int32),
+            #     # valid shape (num_edges,): edge definitions - source
+            #     "edge_index_src": gym.spaces.Box(0, InvariantEnvironment.CONTRACT_MAX_NODES-1, shape=(InvariantEnvironment.CONTRACT_MAX_EDGES,), dtype=np.int32),
+            #     # valid shape (num_edges,): edge definitions - target
+            #     "edge_index_tgt": gym.spaces.Box(0, InvariantEnvironment.CONTRACT_MAX_NODES-1, shape=(InvariantEnvironment.CONTRACT_MAX_EDGES,), dtype=np.int32),
+            # }),
+            "contract_id": gym.spaces.Box(0, InvariantEnvironment.CONTRACT_MAX_IDS, shape=(1,), dtype=np.int32),
             "action_mask": gym.spaces.Box(0, 1, shape=(len(self.action_list),), dtype=np.int32), # for output layer, no need to + len(sptok_list)
             # fixme: 1000 should be MAX_NODES
             "nn_seq": gym.spaces.Box(0, len(self.token_list)+1000, shape=(self.max_step, ), dtype=np.int32), # for encoding layer, need to + len(sptok_list)
@@ -134,9 +136,9 @@ class InvariantEnvironment(gym.Env):
         else:
             self.curr_contract_id = arg_id
 
-        if self.curr_contract_id in self.cached_contract_utils.keys():
+        if self.curr_contract_id in InvariantEnvironment.cached_contract_utils.keys():
             # directly pull from cache
-            cached = self.cached_contract_utils[self.curr_contract_id]
+            cached = InvariantEnvironment.cached_contract_utils[self.curr_contract_id]
             self.contract_path = cached["contract_path"]
             self.solc_version = cached["solc_version"]
             self.contract_json = cached["contract_json"]
@@ -183,11 +185,13 @@ class InvariantEnvironment(gym.Env):
             for p in self.contract_encoded_igraph.es:
                 p["token"] = self.token_dict[p["token"]]
             self.contract_observed = {
-                "def": [self.curr_contract_id, len(self.contract_encoded_igraph.vs), len(self.contract_encoded_igraph.es)],
-                "x": self.pad_to_length(self.contract_encoded_igraph.vs["token"], InvariantEnvironment.CONTRACT_MAX_NODES),
-                "edge_attr": self.pad_to_length(self.contract_encoded_igraph.es["token"], InvariantEnvironment.CONTRACT_MAX_EDGES),
-                "edge_index_src": self.pad_to_length([self.contract_encoded_igraph.es[i].source for i in range(len(self.contract_encoded_igraph.es))], InvariantEnvironment.CONTRACT_MAX_EDGES),
-                "edge_index_tgt": self.pad_to_length([self.contract_encoded_igraph.es[i].target for i in range(len(self.contract_encoded_igraph.es))], InvariantEnvironment.CONTRACT_MAX_EDGES),
+                "x": torch.tensor(self.contract_encoded_igraph.vs["token"]).long(),
+                "edge_attr": torch.tensor(self.contract_encoded_igraph.es["token"]).long(),
+                # shape is: (2, num_edges)
+                "edge_index": torch.tensor([
+                    [self.contract_encoded_igraph.es[i].source for i in range(len(self.contract_encoded_igraph.es))],
+                    [self.contract_encoded_igraph.es[i].target for i in range(len(self.contract_encoded_igraph.es))],
+                ]).long()
             }
 
             # get stovars list
@@ -204,8 +208,8 @@ class InvariantEnvironment(gym.Env):
             self.stovar_to_flex_action = { self.flex_action_to_stovar[dkey]:dkey for dkey in self.flex_action_to_stovar.keys() }
 
             # store to cache
-            self.cached_contract_utils[self.curr_contract_id] = {}
-            cached = self.cached_contract_utils[self.curr_contract_id]
+            InvariantEnvironment.cached_contract_utils[self.curr_contract_id] = {}
+            cached = InvariantEnvironment.cached_contract_utils[self.curr_contract_id]
             cached["contract_path"] = self.contract_path
             cached["solc_version"] = self.solc_version
             cached["contract_json"] = self.contract_json
@@ -293,19 +297,6 @@ class InvariantEnvironment(gym.Env):
         raw_json = raw_output[tmp_pos+len("=======\n"):]
         parsed_json = json.loads(raw_json)
         return parsed_json
-
-    # def get_contract_stovars(self, arg_path):
-    #     cmd_sto = subprocess.run("liquidsol-exe {} --task stovars".format(arg_path), shell=True, capture_output=True)
-    #     assert(cmd_sto.returncode == 0)
-    #     raw_output = cmd_sto.stdout.decode("utf-8")
-    #     lines = raw_output.rstrip().split("\n")[1:]
-    #     assert(len(lines) % 2 == 0)
-    #     n = len(lines) // 2
-    #     tmp_list = []
-    #     for i in range(n):
-    #         tmp_list.append(lines[i])
-    #     print("# stovars are: {}".format(tmp_list))
-    #     return tmp_list
 
     def get_contract_stovars(self, arg_path):
         cmd_sto = subprocess.run("liquidsol-exe {} --task stovars".format(arg_path), shell=True, capture_output=True)
@@ -680,7 +671,8 @@ class InvariantEnvironment(gym.Env):
         self.curr_action_seq = []
         return {
             "start": [1],
-            "contract": self.contract_observed,
+            # "contract": self.contract_observed,
+            "contract_id": [self.curr_contract_id],
             "action_mask": self.get_action_mask(self.start_type),
             "nn_seq": self.pad_to_length(self.action_seq_to_nn_seq(self.curr_action_seq), self.max_step),
             "all_actions": self.action_seq_to_nn_seq(list(range(len(self.action_list)))),
@@ -701,7 +693,8 @@ class InvariantEnvironment(gym.Env):
         print()
         result = list(map(int, [hard_ok, hard, soft_ok, soft]))
         if result[0]+result[2]==result[1]+result[3]:
-            input("Found the ground truth!")
+            # input("Found the ground truth!")
+            pass
         return result
 
     # the action id here is for the action_list / action space for sure    
@@ -728,7 +721,8 @@ class InvariantEnvironment(gym.Env):
                 {
                     # you can't fill any hole since the seq terminates with an exception
                     "start": [1],
-                    "contract": self.contract_observed,
+                    # "contract": self.contract_observed,
+                    "contract_id": [self.curr_contract_id],
                     "action_mask": [0 for _ in range(len(self.action_list))], 
                     "nn_seq": self.pad_to_length(self.action_seq_to_nn_seq(self.curr_action_seq), self.max_step),
                     "all_actions": self.action_seq_to_nn_seq(list(range(len(self.action_list)))),
@@ -830,7 +824,8 @@ class InvariantEnvironment(gym.Env):
         return [
             {
                 "start": [1],
-                "contract": self.contract_observed,
+                # "contract": self.contract_observed,
+                "contract_id": [self.curr_contract_id],
                 "action_mask": tmp_action_mask, 
                 "nn_seq": self.pad_to_length(self.action_seq_to_nn_seq(self.curr_action_seq), self.max_step),
                 "all_actions": self.action_seq_to_nn_seq(list(range(len(self.action_list)))),

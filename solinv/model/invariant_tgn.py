@@ -21,10 +21,7 @@ class InvariantTGN(TorchModelV2, nn.Module):
         # self.obs_size = get_preprocessor(obs_space)(obs_space).size
         # self.inherited_config = model_config
         self.config = model_config["custom_model_config"]
-
-        # need to manually specify it to sync with the environment
-        # if not assigned, the model will assume dummy batch and return zero tensor in `forward`
-        self.contract_igraph_ids = None
+        self.environment = self.config["environment"] # provides access to contract utils
 
         # embedding for all tokens
         self.token_embedding = nn.Embedding(
@@ -114,84 +111,31 @@ class InvariantTGN(TorchModelV2, nn.Module):
 
         return tmp_out
 
-    def recover_graph_date(self, arg_contract):
+    def recover_graph_date(self, arg_contract_id):
         # recover graph data from obs
         # note that batch size could be larger than 1 (multiple instances in a batch), need to address this
-        # print("# contract def is: {}".format(arg_contract["def"]))
-
-        # def: (B, 3)
-        # x: (B, max_nodes)
-        # edge_attr: (B, max_edges)
-        # edge_index_src: (B, max_edges)
-        # edge_index_tgt: (B, max_edges)
 
         # note: need to convert to integer here since ray encapsulates all obs in float
         # use int() since it's not for embedding
-        # tmp_def: (B, 2)
-        tmp_def = arg_contract["def"].int().numpy() 
-        # print("# tmp_def is: {}".format(tmp_def))
-        tmp_batch_size = tmp_def.shape[0]
+        # tmp_def: (B, 1)
+        tmp_contract_id = arg_contract_id.int().numpy() 
+        tmp_batch_size = tmp_contract_id.shape[0]
 
         data_list = []
         # process batches one by one
         # use the tensor directly
         for b in range(tmp_batch_size):
 
-            # basic def info
-            tmp_curr_contract_id = tmp_def[b, 0]
-            tmp_total_nodes = tmp_def[b, 1]
-            tmp_total_edges = tmp_def[b, 2]
+            tmp_curr_contract_id = tmp_contract_id[b, 0]
+            tmp_graph = self.environment.cached_contract_utils[tmp_curr_contract_id]["contract_observed"]
 
-            # check for caching
-            tmp_x0 = None # (num_nodes, )
-            tmp_edge_attr0 = None # (num_edges, )
-            tmp_edge_index = None # (2, num_edges)
-            if tmp_curr_contract_id in self.cached_contract_utils.keys():
-                # already cached, pull from cached pool
-                tmp_x0 = self.cached_contract_utils[tmp_curr_contract_id]["tmp_x0"]
-                tmp_edge_attr0 = self.cached_contract_utils[tmp_curr_contract_id]["tmp_edge_attr0"]
-                tmp_edge_index = self.cached_contract_utils[tmp_curr_contract_id]["tmp_edge_index"]
-                tmp_graph = self.cached_contract_utils[tmp_curr_contract_id]["tmp_graph"]
-            else:
-                # not cached, process and cache
-                self.cached_contract_utils[tmp_curr_contract_id] = {}
-
-                # tmp_x0: (num_nodes,)
-                tmp_x0 = arg_contract["x"][b, :tmp_total_nodes].long()
-                # common forward propagation pass
-                # tmp_x1: (num_nodes, token_embedding_dim)
-                tmp_x1 = self.token_embedding(tmp_x0)
-                # print("# tmp_x1 shape is: {}".format(tmp_x1.shape))
-
-                # tmp_edge_attr0: (num_edges,)
-                tmp_edge_attr0 = arg_contract["edge_attr"][b, :tmp_total_edges].long()
-                # tmp_edge_attr1: (num_edges, token_embedding_dim)
-                tmp_edge_attr1 = self.token_embedding(tmp_edge_attr0)
-                # print("# tmp_edge_attr1 shape is: {}".format(tmp_edge_attr1.shape))
-
-                # tmp_edge_index: (2, num_edges)
-                tmp_edge_index = torch.cat(
-                    [
-                        arg_contract["edge_index_src"][b, :tmp_total_edges].unsqueeze(dim=0), 
-                        arg_contract["edge_index_tgt"][b, :tmp_total_edges].unsqueeze(dim=0),
-                    ],
-                    dim=0,
-                ).long()
-                # print("# tmp_edge_index shape is: {}".format(tmp_edge_index.shape))
-
-                tmp_graph = Data(
-                    x=tmp_x1,
-                    edge_index=tmp_edge_index,
-                    edge_attr=tmp_edge_attr1,
-                )
-
-                # store into cache pool
-                self.cached_contract_utils[tmp_curr_contract_id]["tmp_x0"] = tmp_x0
-                self.cached_contract_utils[tmp_curr_contract_id]["tmp_edge_attr0"] = tmp_edge_attr0
-                self.cached_contract_utils[tmp_curr_contract_id]["tmp_edge_index"] = tmp_edge_index
-                self.cached_contract_utils[tmp_curr_contract_id]["tmp_graph"] = tmp_graph
-
-            data_list.append(tmp_graph)
+            # need to get embedding
+            res_graph = {
+                "x": self.token_embedding(tmp_graph["x"]),
+                "edge_attr": self.token_embedding(tmp_graph["edge_attr"]),
+                "edge_index": tmp_graph["edge_index"], # no need to embed this one
+            }
+            data_list.append(res_graph)
 
         return data_list
 
@@ -204,6 +148,16 @@ class InvariantTGN(TorchModelV2, nn.Module):
         # arg_inv: (B, max_step)
         # arg_graph_repr: [(num_nodes, token_embedding_dim), ...]
         tmp_batch_size = arg_inv.shape[0]
+
+        # # debug
+        # # process the fixed part
+        # tmp_fixed_mask = arg_inv >= self.config["num_token_embeddings"]
+        # # tmp_fixed_inv = arg_inv.clone() # use clone to keep the computation graph
+        # tmp_fixed_inv = arg_inv
+        # tmp_fixed_inv[tmp_fixed_mask] = self.token_embedding.padding_idx # set the node part to <PAD>, which won't be learned
+        # # tmp_fixed_embedding: (1, max_step, token_embedding_dim)
+        # tmp_fixed_embedding = self.token_embedding(tmp_fixed_inv)
+        # return tmp_fixed_embedding
 
         result_list = []
         for b in range(tmp_batch_size):
@@ -237,6 +191,8 @@ class InvariantTGN(TorchModelV2, nn.Module):
             tmp_inv_embedding = tmp_fixed_embedding + tmp_flex_embedding
             result_list.append(tmp_inv_embedding)
 
+            result_list.append(tmp_fixed_embedding)
+
         # result_embedding: (B, max_step, token_embedding_dim)
         result_embedding = torch.cat(result_list, dim=0)
         return result_embedding
@@ -258,10 +214,10 @@ class InvariantTGN(TorchModelV2, nn.Module):
         # ==============================
 
         # tmp0_graph_data: [(B, )]
-        tmp0_graph_data = self.recover_graph_date(input_dict["obs"]["contract"])
+        tmp0_graph_data = self.recover_graph_date(input_dict["obs"]["contract_id"])
         # tmp1_graph_repr: [(num_nodes, token_embedding_dim), ...]
         tmp1_graph_repr = [
-            F.relu(self.contract_conv( p.x, p.edge_index, p.edge_attr ))
+            F.relu(self.contract_conv( p["x"], p["edge_index"], p["edge_attr"] ))
             for p in tmp0_graph_data
         ]
 

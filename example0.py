@@ -65,6 +65,9 @@ if __name__ == "__main__":
                 "invariant_out_dim": 32,
 
                 "action_out_dim": len(tmp_environment.action_list),
+
+                # this provides a share to access the contract related utils
+                "environment": InvariantEnvironment,
             },
         },
         "num_workers": 1,
