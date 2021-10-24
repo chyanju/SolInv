@@ -54,4 +54,5 @@ tensorboard --host 0.0.0.0 --logdir=~/ray_results
 - ▢ Switch to a more precise DSL.
 - ▢ Investigate reason of slow back propagation (need GPU?).
 - ▢ Use Slither to generate more compact graph representation.
+- ▢ Check and set a proper `max_step` in training.
 
