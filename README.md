@@ -33,8 +33,13 @@ SolInv/Venti inherits part of the [Trinity](https://github.com/fredfeng/Trinity)
 ## Commands
 
 ```bash
+# run without gpu
 python ./example0.py
-CUDA_VISIBLE_DEVICES=0 python ./example0.py
+
+# run with gpu
+CUDA_VISIBLE_DEVICES=0 python ./example0.py --ngpu 1
+
+# start tensorboard
 tensorboard --host 0.0.0.0 --logdir=~/ray_results
 ```
 

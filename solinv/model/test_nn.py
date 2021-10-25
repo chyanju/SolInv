@@ -73,43 +73,6 @@ class TestNN(TorchModelV2, nn.Module):
     def where(self):
         return next(self.parameters()).device
 
-    @override(TorchModelV2)
-    def value_function(self):
-        assert self._invariant_features is not None, "self._invariant_features is None, call forward() first."
-        # print("################ self._invariant_features is on: {}".format(self._invariant_features.get_device()))
-        return torch.reshape(self.value_branch(self._invariant_features), [-1])
-
-    def action_function(self, arg_inv, arg_graph_repr, arg_action_seq):
-        # perform attention-like (dynamic activation function) over actions
-        # this does not require override
-        # arg_inv: (B, invariant_out_dim)
-        # arg_graph_repr: [(num_nodes, token_embedding_dim), ...]
-        # arg_action_seq: (B, len(env.action_list))
-        B = arg_inv.shape[0]
-
-        # tmp0: (B, len(env.action_list), token_embedding_dim)
-        tmp0 = self.mixed_embedding(arg_action_seq, arg_graph_repr)
-        # tmp1: (B, len(env.action_list), invariant_out_dim)
-        tmp1 = self.action_projection_branch(tmp0)
-
-        # tmp2: (B, invariant_out_dim, 1)
-        tmp2 = arg_inv.view(B, self.config["invariant_out_dim"], 1)
-
-        # simulate matrix multiplication
-        # tmp3: (B, len(env.action_list), 1)
-        tmp3 = torch.matmul(tmp1, tmp2)
-        # tmp4: (B, len(env.action_list))
-        tmp4 = tmp3.view(B, self.config["action_out_dim"])
-
-        # tmp_bias: (B, len(env.action_list), 1)
-        tmp_bias = self.action_bias_branch(tmp0).view(B, self.config["action_out_dim"])
-
-        # apply bias
-        # tmp_out: (B, len(env.action_list))
-        tmp_out = tmp4 + tmp_bias
-
-        return tmp_out
-
     def recover_graph_data(self, arg_contract_id):
         # recover graph data from obs
         # note that batch size could be larger than 1 (multiple instances in a batch), need to address this
@@ -139,75 +102,16 @@ class TestNN(TorchModelV2, nn.Module):
 
         return data_list
 
-    def mixed_embedding(self, arg_inv, arg_graph_repr):
-        # take over the forward method of the mixed embedding
-        # for (fixed) base tokens, use the original token embedding directly
-        # for flex action/token, locate to the corresponding node representation in the provided graph
-        # note that batch size could be larger than 1 (multiple instances in a batch), need to address this
-
-        # arg_inv: (B, max_step)
-        # arg_graph_repr: [(num_nodes, token_embedding_dim), ...]
-        tmp_batch_size = arg_inv.shape[0]
-
-        # # debug
-        # # process the fixed part
-        # tmp_fixed_mask = arg_inv >= self.config["num_token_embeddings"]
-        # # tmp_fixed_inv = arg_inv.clone() # use clone to keep the computation graph
-        # tmp_fixed_inv = arg_inv
-        # tmp_fixed_inv[tmp_fixed_mask] = self.token_embedding.padding_idx # set the node part to <PAD>, which won't be learned
-        # # tmp_fixed_embedding: (1, max_step, token_embedding_dim)
-        # tmp_fixed_embedding = self.token_embedding(tmp_fixed_inv)
-        # return tmp_fixed_embedding
-
-        result_list = []
-        for b in range(tmp_batch_size):
-            # note-important
-            # tmp_inv: (1, max_step) if arg_inv is action_seq
-            #          (1, len(action_list)) if arg_inv is all_actions
-            tmp_inv = arg_inv[b:b+1, :]
-
-            # process the fixed part
-            tmp_fixed_mask = tmp_inv >= self.config["num_token_embeddings"]
-            tmp_fixed_inv = tmp_inv.clone() # use clone to keep the computation graph
-            tmp_fixed_inv[tmp_fixed_mask] = self.token_embedding.padding_idx # set the node part to <PAD>, which won't be learned
-            # tmp_fixed_embedding: (1, max_step, token_embedding_dim)
-            tmp_fixed_embedding = self.token_embedding(tmp_fixed_inv)
-
-            # process the flex part
-            tmp_flex_mask = ~tmp_fixed_mask
-            tmp_flex_inv = tmp_inv.clone()
-            # note: here we insert 1 additional padding node into position 0
-            tmp_flex_inv[tmp_flex_mask] = 0 + self.config["num_token_embeddings"] - 1
-            # tmp_flex_embedding: (1, max_step, token_embedding_dim)
-            tmp_flex_embedding = F.embedding(
-                input=tmp_flex_inv-self.config["num_token_embeddings"]+1, weight=arg_graph_repr[b], padding_idx=0,
-                max_norm=self.token_embedding.max_norm, norm_type=self.token_embedding.norm_type,
-                scale_grad_by_freq=self.token_embedding.scale_grad_by_freq, sparse=self.token_embedding.sparse,
-            )
-
-            # print("# tmp_fixed_embedding shape is: {}".format(tmp_fixed_embedding.shape))
-            # print("# tmp_flex_embedding shape is: {}".format(tmp_flex_embedding.shape))
-
-            # then add them up
-            # tmp_inv_embedding: (1, max_step, token_embedding_dim)
-            tmp_inv_embedding = tmp_fixed_embedding + tmp_flex_embedding
-            result_list.append(tmp_inv_embedding)
-
-        # result_embedding: (B, max_step, token_embedding_dim)
-        result_embedding = torch.cat(result_list, dim=0)
-        return result_embedding
-
     @override(TorchModelV2)
     def forward(self, input_dict, state, seq_lens):
         # state and seq_lens are not used here
 
-        # print("# input_dict[obs][start] is: {}".format(input_dict["obs"]["start"]))
         if all((input_dict["obs"]["start"].flatten() == 0).tolist()):
             # if all flags are 0, then it's for sure a dummy batch
             # print("# Model is in dummy batch mode.")
             # note: need to create tensors to the current model's device
-            self._invariant_features = torch.zeros(input_dict["obs"]["nn_seq"].shape[0], self.config["invariant_out_dim"]).to(self.where())
-            tmp_out = torch.zeros(input_dict["obs"]["nn_seq"].shape[0], self.config["action_out_dim"]).to(self.where())
+            self._invariant_features = torch.zeros(input_dict["obs"]["start"].shape[0], self.config["invariant_out_dim"]).to(self.where())
+            tmp_out = torch.zeros(input_dict["obs"]["start"].shape[0], self.config["action_out_dim"]).to(self.where())
             return tmp_out, []
 
         # print("# Model is in normal mode.")
@@ -218,6 +122,7 @@ class TestNN(TorchModelV2, nn.Module):
         tmp0_graph_data = self.recover_graph_data(input_dict["obs"]["contract_id"])
         # tmp1_graph_repr: [(num_nodes, token_embedding_dim), ...]
         tmp1_graph_repr = [
+            # DEBUG: disable edge_attr encoding first
             # F.relu(self.contract_conv( p["x"], p["edge_index"], p["edge_attr"] ))
             F.relu(self.contract_conv( p["x"], p["edge_index"] ))
             for p in tmp0_graph_data
@@ -227,20 +132,24 @@ class TestNN(TorchModelV2, nn.Module):
         # =====================
 
         # tmp0_inv: (B, max_step)
-        tmp0_inv = input_dict["obs"]["nn_seq"].long()
+        tmp0_inv_token = input_dict["obs"]["action_seq@token_channel"].long()
+        tmp0_inv_node = input_dict["obs"]["action_seq@node_channel"].long()
 
         if self.time_major:
             # (max_step, B)
-            tmp0_inv = tmp0_inv.permute(1,0)
+            tmp0_inv_token = tmp0_inv_token.permute(1,0)
+            tmp0_inv_node = tmp0_inv_node.permute(1,0)
 
         # tmp1_inv: (B, invariant_out_dim)
-        tmp1_inv = self.encode_inv(tmp0_inv, tmp1_graph_repr)
-
-        # print("# tmp1_inv shape is: {}".format(tmp1_inv.shape))
-        # input("PAUSE")
+        tmp1_inv = self.encode_inv(tmp0_inv_token, tmp0_inv_node, tmp1_graph_repr)
 
         # (B, action_out_dim)
-        tmp2_inv = self.action_function(tmp1_inv, tmp1_graph_repr, input_dict["obs"]["all_actions"].long())
+        tmp2_out = self.action_function(
+            tmp1_inv, 
+            input_dict["obs"]["all_actions@token_channel"].long(),
+            input_dict["obs"]["all_actions@node_channel"].long(),
+            tmp1_graph_repr,
+        )
 
         # apply masking, ref: https://towardsdatascience.com/action-masking-with-rllib-5e4bec5e7505
         # will broadcast with shape
@@ -252,13 +161,13 @@ class TestNN(TorchModelV2, nn.Module):
         # note-important: should return state as [] because LSTM is not used between states, 
         #                 but just to encode one state, which makes the whole model behave normal
         #                 (not considering previous states)
-        return tmp2_inv + inf_mask, []
+        return tmp2_out + inf_mask, []
 
-    def encode_inv(self, inputs, graph_repr):
-        # inputs: (B, max_step)
+    def encode_inv(self, arg_inv_token, arg_inv_node, arg_graph_repr):
+        # arg_inv_token, arg_inv_node: (B, max_step)
 
         # tmp0_inv: (B, max_step, token_embedding_dim)
-        tmp0_inv = self.mixed_embedding(inputs, graph_repr)
+        tmp0_inv = self.mixed_embedding(arg_inv_token, arg_inv_node, arg_graph_repr)
 
         # tmp1_inv: (B, max_step, invariant_hidden_dim)
         tmp1_inv = nn.functional.relu(self.invariant_projection(tmp0_inv))
@@ -273,3 +182,83 @@ class TestNN(TorchModelV2, nn.Module):
         )
 
         return self._invariant_features
+
+    def mixed_embedding(self, arg_inv_token, arg_inv_node, arg_graph_repr):
+        # take over the forward method of the mixed embedding
+        # for (fixed) base tokens, use the original token embedding directly
+        # for flex action/token, locate to the corresponding node representation in the provided graph
+        # note that batch size could be larger than 1 (multiple instances in a batch), need to address this
+
+        # arg_inv: (B, max_step)
+        # arg_graph_repr: [(num_nodes, token_embedding_dim), ...]
+        tmp_batch_size = arg_inv_token.shape[0]
+
+        result_list = []
+        for b in range(tmp_batch_size):
+            # note-important
+            # b_inv_token: (1, max_step) if arg_inv_token is action_seq
+            #                (1, len(action_list)) if arg_inv_token is all_actions
+            b_inv_token = arg_inv_token[b:b+1, :]
+            b_inv_node = arg_inv_node[b:b+1, :]
+
+            # process the fixed part
+            # tmp_fixed_embedding: (1, max_step, token_embedding_dim)
+            tmp_fixed_embedding = self.token_embedding(b_inv_token)
+
+            # process the flex part
+            tmp_flex_embedding = F.embedding(
+                input=b_inv_node, weight=arg_graph_repr[b], padding_idx=self.token_embedding.padding_idx,
+                max_norm=self.token_embedding.max_norm, norm_type=self.token_embedding.norm_type,
+                scale_grad_by_freq=self.token_embedding.scale_grad_by_freq, sparse=self.token_embedding.sparse,
+            )
+
+            # then add them up
+            # tmp_inv_embedding: (1, max_step, token_embedding_dim)
+            tmp_inv_embedding = tmp_fixed_embedding + tmp_flex_embedding
+            result_list.append(tmp_inv_embedding)
+
+        # result_embedding: (B, max_step, token_embedding_dim)
+        result_embedding = torch.cat(result_list, dim=0)
+        return result_embedding
+
+    @override(TorchModelV2)
+    def value_function(self):
+        assert self._invariant_features is not None, "self._invariant_features is None, call forward() first."
+        return torch.reshape(self.value_branch(self._invariant_features), [-1])
+
+    def action_function(self, arg_inv, arg_aa_token, arg_aa_node, arg_graph_repr):
+        # perform attention-like (dynamic activation function) over actions
+        # this does not require override
+        # arg_inv: (B, invariant_out_dim)
+        # arg_aa_token, arg_aa_node: (B, len(env.action_list))
+        # arg_graph_repr: [(num_nodes, token_embedding_dim), ...]
+        B = arg_inv.shape[0]
+
+        # tmp0: (B, len(env.action_list), token_embedding_dim)
+        tmp0 = self.mixed_embedding(arg_aa_token, arg_aa_node, arg_graph_repr)
+        # tmp1: (B, len(env.action_list), invariant_out_dim)
+        tmp1 = self.action_projection_branch(tmp0)
+
+        # tmp2: (B, invariant_out_dim, 1)
+        tmp2 = arg_inv.view(B, self.config["invariant_out_dim"], 1)
+
+        # simulate matrix multiplication
+        # tmp3: (B, len(env.action_list), 1)
+        tmp3 = torch.matmul(tmp1, tmp2)
+        # tmp4: (B, len(env.action_list))
+        tmp4 = tmp3.view(B, self.config["action_out_dim"])
+
+        # tmp_bias: (B, len(env.action_list), 1)
+        tmp_bias = self.action_bias_branch(tmp0).view(B, self.config["action_out_dim"])
+
+        # apply bias
+        # tmp_out: (B, len(env.action_list))
+        tmp_out = tmp4 + tmp_bias
+
+        return tmp_out
+
+    
+
+    
+
+    

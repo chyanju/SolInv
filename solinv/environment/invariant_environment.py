@@ -21,17 +21,7 @@ from ..tyrell.dsl.utils import derive_dfs, get_hole_dfs
 from .invariant_heuristic import InvariantHeuristic
 from .error import EnvironmentError
 
-from .soltype_ast import get_soltype_ast, soltype_ast_to_igraph
-
-# import torch
-# class Tensor(torch.Tensor):
-#     @staticmethod
-#     def __new__(cls, *args, info=None, **kwargs):
-#         return super().__new__(cls, *args, **kwargs)
-    
-#     def __init__(self, *args, info=None, **kwargs):
-#         super().__init__() # optional
-#         self.info = info
+from .soltype_ast import get_soltype_ast, soltype_ast_to_igraph, insert_padding_node
 
 class InvariantEnvironment(gym.Env):
     # note: class static variable
@@ -40,6 +30,7 @@ class InvariantEnvironment(gym.Env):
     cached_contract_utils = {}
 
     CONTRACT_MAX_IDS   = 100
+    CONTRACT_MAX_NODES = 1000
 
     def __init__(self, config: Dict[str, Any]):
         self.config = config
@@ -70,6 +61,8 @@ class InvariantEnvironment(gym.Env):
         # note: re-order action list to have fixed+flex order
         self.action_list = self.fixed_action_list + self.flex_action_list
         self.action_dict = {self.action_list[i]:i for i in range(len(self.action_list))}
+        # note: see notes in `observe_action_seq`
+        assert self.action_list[0].name == "empty", "Need `empty` as the first production rule in DSL."
 
         # solType slim AST tokens
         self.special_token_list = ["<PAD>", "<ID>", "<REF>"]
@@ -124,7 +117,7 @@ class InvariantEnvironment(gym.Env):
         self.token_list = self.base_token_list + self.fixed_action_list
         self.token_dict = {self.token_list[i]:i for i in range(len(self.token_list))}
 
-        # fixme: here we setup all contracts first to prevent contract id not found error in non local mode
+        # fixme: here we setup all contracts first to prevent contract id not found error in non local mode of RLlib
         for i in range(len(config["contracts"])):
             self.setup(config, arg_id=i)
 
@@ -141,9 +134,14 @@ class InvariantEnvironment(gym.Env):
             "start": gym.spaces.Box(0,1,shape=(1,),dtype=np.int32),
             "contract_id": gym.spaces.Box(0, InvariantEnvironment.CONTRACT_MAX_IDS, shape=(1,), dtype=np.int32),
             "action_mask": gym.spaces.Box(0, 1, shape=(len(self.action_list),), dtype=np.int32), # for output layer, no need to + len(sptok_list)
-            # fixme: 1000 should be MAX_NODES
-            "nn_seq": gym.spaces.Box(0, len(self.token_list)+1000, shape=(self.max_step, ), dtype=np.int32), # for encoding layer, need to + len(sptok_list)
-            "all_actions": gym.spaces.Box(0, len(self.token_list)+1000, shape=(len(self.action_list),), dtype=np.int32), # for dynamic action output, remain the same for the same contract
+            
+            # action_seq series: returns the current action sequence, in two channels, with <PAD> for padding and values belonging to other channel
+            "action_seq@token_channel": gym.spaces.Box(0, len(self.token_list), shape=(self.max_step,), dtype=np.int32),
+            "action_seq@node_channel": gym.spaces.Box(0, InvariantEnvironment.CONTRACT_MAX_NODES, shape=(self.max_step,), dtype=np.int32),
+
+            # all_actions series: for dynamic action output, remain the same for the same contract, same channelling style
+            "all_actions@token_channel": gym.spaces.Box(0, len(self.token_list), shape=(len(self.action_list),), dtype=np.int32),
+            "all_actions@node_channel": gym.spaces.Box(0, InvariantEnvironment.CONTRACT_MAX_NODES, shape=(len(self.action_list),), dtype=np.int32),
         })
 
     def setup(self, arg_config, arg_id=None):
@@ -159,7 +157,6 @@ class InvariantEnvironment(gym.Env):
             self.contract_path = cached["contract_path"]
             self.solc_version = cached["solc_version"]
             self.contract_json = cached["contract_json"]
-            self.contract_static_env = cached["contract_static_env"]
             self.contract_slim_ast = cached["contract_slim_ast"]
             self.contract_e2n = cached["contract_e2n"]
             self.contract_e2r = cached["contract_e2r"]
@@ -183,12 +180,27 @@ class InvariantEnvironment(gym.Env):
             # tokenize the target contract
             self.contract_json = self.get_contract_ast(self.contract_path, self.solc_version)
             
-            self.contract_static_env = {}
+            # e2n: variable name -> node id
+            #      e.g., {'_balances': 0, '_totalSupply': 4, 'account': 5, 'value': 6}
+            # e2r: variable name -> list of node ids that refer to this variable, e.g., 
+            #      {'account': [13, 37, 42],
+            #       '_totalSupply': [22, 24, 28, 31],
+            #       'value': [23, 32, 43],
+            #       '_balances': [36, 41]}
+            # - an variable name is NOT always a stovar
+            # - an identifier is NOT always a variable (it could also be some reserved one like "require")
             self.contract_slim_ast, vs, es, var_v = get_soltype_ast(self.contract_json)
             self.contract_e2n, self.contract_e2r, self.contract_igraph, self.contract_root_id = soltype_ast_to_igraph(self.contract_slim_ast, vs, es, var_v)
-            print(self.contract_e2n)
-            print(self.contract_e2r)
-            print(self.contract_root_id)
+            # note: adding an extra padding node
+            self.contract_igraph, self.contract_e2n, self.contract_e2r, self.contract_root_id = insert_padding_node(
+                self.contract_igraph, self.contract_e2n, self.contract_e2r, self.contract_root_id
+            )
+            print("# ======")
+            print("# contract: {}\n# e2n: {}\n# e2r: {}\n# root: {}\n# num_nodes: {}\n# num_edges: {}".format(
+                self.contract_path, self.contract_e2n, self.contract_e2r, self.contract_root_id,
+                len(self.contract_igraph.vs), len(self.contract_igraph.es),
+            ))
+            print("# ======")
             # self.contract_networkx = igraph.Graph.to_networkx(self.contract_igraph)
             # map tokens to corresponding ids (no variable will show up since the graph is already anonymous)
             self.contract_encoded_igraph = self.contract_igraph.copy()
@@ -196,7 +208,7 @@ class InvariantEnvironment(gym.Env):
                 try:
                     p["token"] = self.token_dict[p["token"]]
                 except KeyError:
-                    print(p["token"], self.token_dict.keys())
+                    raise NotImplementedError("Unsupported token, got: {}.".format(p["token"]))
             for p in self.contract_encoded_igraph.es:
                 p["token"] = self.token_dict[p["token"]]
             self.contract_observed = {
@@ -228,7 +240,6 @@ class InvariantEnvironment(gym.Env):
             cached["contract_path"] = self.contract_path
             cached["solc_version"] = self.solc_version
             cached["contract_json"] = self.contract_json
-            cached["contract_static_env"] = self.contract_static_env
             cached["contract_slim_ast"] = self.contract_slim_ast
             cached["contract_e2n"] = self.contract_e2n
             cached["contract_e2r"] = self.contract_e2r
@@ -249,29 +260,32 @@ class InvariantEnvironment(gym.Env):
         # action_seq: represented using ids from action_list, for internal tracking of the environment
         self.curr_action_seq = None
 
-    def action_seq_to_nn_seq(self, arg_action_seq):
-        # nn_seq: represented using ids from (overflow) embedding, for internal tracking of the neural network
-        # orderings:
-        #   [ inflow                      | overflow             ]
-        #   [ token list                  | node id space        ]
-        #   [ base tokens | fixed actions | node id space        ]
-        #   [ off-the-shelf embeddings    | aggregated embedings ]
-        # for node id part, node_id = nn_id - len(token_list), i.e., the remaining (overflow part) is the id
-        ret_seq = []
+    def observe_action_seq(self, arg_action_seq):
+        # turn designated nn_seq into its observed form (channelling)
+        # returns: two channels of the same action sequence
+
+        # note: <PAD> will usually here point to 0, which in action list should be `empty` production rule
+        #       we also abuse a bit here that the following three tokens all have "padding" functionalities with id 0:
+        #       - `empty` production rule
+        #       - <PAD> in token
+        #       - a pddding node with <PAD> label 
+        #         (a padding node should always have <PAD> label, but a node with <PAD> is not always a padding node)
+        ret_seq_token, ret_seq_node = [], []
         for p in arg_action_seq:
             if p >= len(self.fixed_action_list):
                 # flex action
                 if self.action_list[p] in self.flex_action_to_stovar.keys():
-                    ret_seq.append(
-                        self.contract_e2n[self.flex_action_to_stovar[self.action_list[p]]] + len(self.base_token_list)
-                    )
+                    ret_seq_token.append(self.token_dict["<PAD>"])
+                    ret_seq_node.append(self.contract_e2n[self.flex_action_to_stovar[self.action_list[p]]])
                 else:
-                    # this action does not have corresponding id in graph, use padding
-                    ret_seq.append( self.token_dict["<PAD>"] )
+                    # this action does not have corresponding stovar (the prod is not useful), use padding instead
+                    ret_seq_token.append(self.token_dict["<PAD>"])
+                    ret_seq_node.append(self.token_dict["<PAD>"])
             else:
                 # fixed action
-                ret_seq.append(p+len(self.base_token_list))
-        return ret_seq
+                ret_seq_token.append(p)
+                ret_seq_node.append(self.token_dict["<PAD>"])
+        return ret_seq_token, ret_seq_node
 
     def pad_to_length(self, arg_obj, arg_length):
         return arg_obj + [self.token_dict["<PAD>"] for _ in range(arg_length-len(arg_obj))]
@@ -374,13 +388,16 @@ class InvariantEnvironment(gym.Env):
         self.setup(self.config)
         self.curr_trinity_inv = HoleNode(type=self.start_type)
         self.curr_action_seq = []
+        tmp_action_seq_token, tmp_action_seq_node = self.observe_action_seq(self.curr_action_seq)
+        tmp_all_actions_token, tmp_all_actions_node = self.observe_action_seq(list(range(len(self.action_list))))
         return {
             "start": [1],
-            # "contract": self.contract_observed,
             "contract_id": [self.curr_contract_id],
             "action_mask": self.get_action_mask(self.start_type),
-            "nn_seq": self.pad_to_length(self.action_seq_to_nn_seq(self.curr_action_seq), self.max_step),
-            "all_actions": self.action_seq_to_nn_seq(list(range(len(self.action_list)))),
+            "action_seq@token_channel": self.pad_to_length(tmp_action_seq_token, self.max_step),
+            "action_seq@node_channel": self.pad_to_length(tmp_action_seq_node, self.max_step),
+            "all_actions@token_channel": self.pad_to_length(tmp_all_actions_token, self.max_step),
+            "all_actions@node_channel": self.pad_to_length(tmp_all_actions_node, self.max_step),
         }
 
     def check(self, arg_contract_path: str, arg_verifier_inv: str):
@@ -422,15 +439,18 @@ class InvariantEnvironment(gym.Env):
             print("# [debug][done/exception] contract: {}, seq: {}, inv(before): {}".format(
                 self.curr_contract_id, self.curr_action_seq, self.trinity_inv_to_debugging_inv(self.curr_trinity_inv),
             ))
+            tmp_action_seq_token, tmp_action_seq_node = self.observe_action_seq(self.curr_action_seq)
+            tmp_all_actions_token, tmp_all_actions_node = self.observe_action_seq(list(range(len(self.action_list))))
             return [
                 {
                     # you can't fill any hole since the seq terminates with an exception
                     "start": [1],
-                    # "contract": self.contract_observed,
                     "contract_id": [self.curr_contract_id],
                     "action_mask": [0 for _ in range(len(self.action_list))], 
-                    "nn_seq": self.pad_to_length(self.action_seq_to_nn_seq(self.curr_action_seq), self.max_step),
-                    "all_actions": self.action_seq_to_nn_seq(list(range(len(self.action_list)))),
+                    "action_seq@token_channel": self.pad_to_length(tmp_action_seq_token, self.max_step),
+                    "action_seq@node_channel": self.pad_to_length(tmp_action_seq_node, self.max_step),
+                    "all_actions@token_channel": self.pad_to_length(tmp_all_actions_token, self.max_step),
+                    "all_actions@node_channel": self.pad_to_length(tmp_all_actions_node, self.max_step),
                 }, 
                 0.0, # reward 
                 True, # terminate
@@ -526,14 +546,17 @@ class InvariantEnvironment(gym.Env):
                 tmp_terminate = False
                 tmp_reward = 0.1 * tmp_heuristic_multiplier * tmp_repeat_multiplier
 
+        tmp_action_seq_token, tmp_action_seq_node = self.observe_action_seq(self.curr_action_seq)
+        tmp_all_actions_token, tmp_all_actions_node = self.observe_action_seq(list(range(len(self.action_list))))
         return [
             {
                 "start": [1],
-                # "contract": self.contract_observed,
                 "contract_id": [self.curr_contract_id],
                 "action_mask": tmp_action_mask, 
-                "nn_seq": self.pad_to_length(self.action_seq_to_nn_seq(self.curr_action_seq), self.max_step),
-                "all_actions": self.action_seq_to_nn_seq(list(range(len(self.action_list)))),
+                "action_seq@token_channel": self.pad_to_length(tmp_action_seq_token, self.max_step),
+                "action_seq@node_channel": self.pad_to_length(tmp_action_seq_node, self.max_step),
+                "all_actions@token_channel": self.pad_to_length(tmp_all_actions_token, self.max_step),
+                "all_actions@node_channel": self.pad_to_length(tmp_all_actions_node, self.max_step),
             }, 
             tmp_reward, 
             tmp_terminate, 
