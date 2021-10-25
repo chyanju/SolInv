@@ -57,12 +57,13 @@ if __name__ == "__main__":
     # need to construct the vocab first to provide parameters for nn
     tmp_environment = InvariantEnvironment(config=env_config)
 
-    # ray.init(local_mode=True, object_store_memory=5*(10**9))
-    ray.init(local_mode=True)
+    # ray.init(local_mode=True)
+    # use non local mode to enable GPU
+    ray.init()
     ModelCatalog.register_custom_model("invariant_tgn", InvariantTGN)
     # ModelCatalog.register_custom_model("invariant_tgn", TestInvariantTGN)
 
-    ppo_config = ppo.DEFAULT_CONFIG.copy()
+    rl_config = ppo.DEFAULT_CONFIG.copy()
     rl_config = {
         "env": InvariantEnvironment,
         "env_config": env_config,
@@ -83,10 +84,13 @@ if __name__ == "__main__":
             },
         },
         "num_workers": 1,
+        "num_gpus": 1,
         "framework": "torch",
     }
-    ppo_config.update(rl_config)
-    agent = ppo.PPOTrainer(env=InvariantEnvironment, config=ppo_config)
+
+    # tune.run("PPO", stop={"episode_reward_mean": 200}, config=rl_config)
+
+    agent = ppo.PPOTrainer(env=InvariantEnvironment, config=rl_config)
     
     for i in range(100):
         print("# i={}".format(i))

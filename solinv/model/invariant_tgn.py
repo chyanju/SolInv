@@ -75,9 +75,13 @@ class InvariantTGN(TorchModelV2, nn.Module):
         # the type conversion methods every time (e.g., `tensor.long()`)
         self.cached_contract_utils = {}
 
+    def where(self):
+        return next(self.parameters()).device
+
     @override(TorchModelV2)
     def value_function(self):
         assert self._invariant_features is not None, "self._invariant_features is None, call forward() first."
+        # print("################ self._invariant_features is on: {}".format(self._invariant_features.get_device()))
         return torch.reshape(self.value_branch(self._invariant_features), [-1])
 
     def action_function(self, arg_inv, arg_graph_repr, arg_action_seq):
@@ -111,14 +115,14 @@ class InvariantTGN(TorchModelV2, nn.Module):
 
         return tmp_out
 
-    def recover_graph_date(self, arg_contract_id):
+    def recover_graph_data(self, arg_contract_id):
         # recover graph data from obs
         # note that batch size could be larger than 1 (multiple instances in a batch), need to address this
 
         # note: need to convert to integer here since ray encapsulates all obs in float
         # use int() since it's not for embedding
         # tmp_def: (B, 1)
-        tmp_contract_id = arg_contract_id.int().numpy() 
+        tmp_contract_id = arg_contract_id.int().cpu().numpy() 
         tmp_batch_size = tmp_contract_id.shape[0]
 
         data_list = []
@@ -130,10 +134,11 @@ class InvariantTGN(TorchModelV2, nn.Module):
             tmp_graph = self.environment.cached_contract_utils[tmp_curr_contract_id]["contract_observed"]
 
             # need to get embedding
+            # note: need to recover to the current device of the model
             res_graph = {
-                "x": self.token_embedding(tmp_graph["x"]),
-                "edge_attr": self.token_embedding(tmp_graph["edge_attr"]),
-                "edge_index": tmp_graph["edge_index"], # no need to embed this one
+                "x": self.token_embedding(tmp_graph["x"].to(self.where())),
+                "edge_attr": self.token_embedding(tmp_graph["edge_attr"].to(self.where())),
+                "edge_index": tmp_graph["edge_index"].to(self.where()), # no need to embed this one
             }
             data_list.append(res_graph)
 
@@ -205,8 +210,9 @@ class InvariantTGN(TorchModelV2, nn.Module):
         if all((input_dict["obs"]["start"].flatten() == 0).tolist()):
             # if all flags are 0, then it's for sure a dummy batch
             # print("# Model is in dummy batch mode.")
-            self._invariant_features = torch.zeros(input_dict["obs"]["nn_seq"].shape[0], self.config["invariant_out_dim"])
-            tmp_out = torch.zeros(input_dict["obs"]["nn_seq"].shape[0], self.config["action_out_dim"])
+            # note: need to create tensors to the current model's device
+            self._invariant_features = torch.zeros(input_dict["obs"]["nn_seq"].shape[0], self.config["invariant_out_dim"]).to(self.where())
+            tmp_out = torch.zeros(input_dict["obs"]["nn_seq"].shape[0], self.config["action_out_dim"]).to(self.where())
             return tmp_out, []
 
         # print("# Model is in normal mode.")
@@ -214,7 +220,7 @@ class InvariantTGN(TorchModelV2, nn.Module):
         # ==============================
 
         # tmp0_graph_data: [(B, )]
-        tmp0_graph_data = self.recover_graph_date(input_dict["obs"]["contract_id"])
+        tmp0_graph_data = self.recover_graph_data(input_dict["obs"]["contract_id"])
         # tmp1_graph_repr: [(num_nodes, token_embedding_dim), ...]
         tmp1_graph_repr = [
             F.relu(self.contract_conv( p["x"], p["edge_index"], p["edge_attr"] ))

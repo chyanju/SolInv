@@ -3,9 +3,20 @@ An RL Solution for Invariant Synthesis in Solidity
 
 ## Requirements
 
-- [PyTorch](https://pytorch.org/) (tested under 1.9)
-- [RLlib](https://docs.ray.io/en/latest/rllib.html) (tested under 1.6.0)
-- [SolidTypes](https://github.com/Technius/SolidTypes.git) (`list-sto-vars` branch)
+- Trinity-Edge ([https://github.com/chyanju/Trinity-Edge](https://github.com/chyanju/Trinity-Edge))
+  - Including all its dependency requirements:
+    - sexpdata
+- PyTorch ([https://pytorch.org/](https://pytorch.org/))
+  - 1.8.0 recommended for compatability with PyG with GPU)
+- PyTorch Geometric ([https://github.com/pyg-team/pytorch_geometric](https://github.com/pyg-team/pytorch_geometric))
+- RLlib ([https://docs.ray.io/en/latest/rllib.html](https://docs.ray.io/en/latest/rllib.html))
+- SolidTypes ([https://github.com/Technius/SolidTypes.git](https://github.com/Technius/SolidTypes.git))
+  - `list-sto-vars` branch
+  - Including all its dependency requirements:
+    - solc-select
+    - z3-solver
+  - Note: Run `stack build` **<u>without</u>** `conda` environment enabled.
+- python-igraph ([https://igraph.org/](https://igraph.org/))
 
 SolInv/Venti inherits part of the [Trinity](https://github.com/fredfeng/Trinity) and [ReMorpheus](https://github.com/chyanju/ReMorpheus) frameworks, but you don't have to install them.
 
@@ -13,6 +24,7 @@ SolInv/Venti inherits part of the [Trinity](https://github.com/fredfeng/Trinity)
 
 ```bash
 python ./example0.py
+CUDA_VISIBLE_DEVICES=0 python ./example0.py
 tensorboard --host 0.0.0.0 --logdir=~/ray_results
 ```
 
@@ -43,6 +55,7 @@ tensorboard --host 0.0.0.0 --logdir=~/ray_results
 - https://docs.ray.io/en/latest/rllib-training.html#customizing-exploration-behavior
 - https://docs.ray.io/en/latest/rllib-training.html#getting-started
 - https://codepen.io/sosuke/pen/Pjoqqp
+- https://docs.aws.amazon.com/dlami/latest/devguide/tutorial-base.html
 
 ## TODO's
 
@@ -50,9 +63,8 @@ tensorboard --host 0.0.0.0 --logdir=~/ray_results
 - ✓ Repeat multipliers should be using different denominators across contracts.
 - ✓ Investigate into the memory overflow issue.
 - ✓ Improve action masking to rule out redundant flex actions.
-- ▢ Enable GPU support.
+- ✓ Enable GPU support.
+- ▢ Need more efficient network computation to speed up in GPU mode, the current computation is not efficient enough.
 - ▢ Switch to a more precise DSL.
-- ▢ Investigate reason of slow back propagation (need GPU?).
-- ▢ Use Slither to generate more compact graph representation.
 - ▢ Check and set a proper `max_step` in training.
 

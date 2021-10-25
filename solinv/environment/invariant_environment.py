@@ -124,6 +124,10 @@ class InvariantEnvironment(gym.Env):
         self.token_list = self.base_token_list + self.fixed_action_list
         self.token_dict = {self.token_list[i]:i for i in range(len(self.token_list))}
 
+        # fixme: here we setup all contracts first to prevent contract id not found error in non local mode
+        for i in range(len(config["contracts"])):
+            self.setup(config, arg_id=i)
+
         # this caches contract utils for faster switching
         # between cotnracts in training between different rollouts
         self.curr_contract_id = None # need to reset
