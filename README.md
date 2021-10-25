@@ -1,5 +1,15 @@
-# SolInv/Venti
-An RL Solution for Invariant Synthesis in Solidity
+<div align="left">
+  <h1>
+    <img src="./resources/solinv_logo_marigold.png" width=50>
+  	SolInv/Venti
+  </h1>
+</div>
+
+Solidity Contract Invariant Synthesis Using Deduction-Guided Reinforcement Learning.
+
+<div align="left">
+  This project is powered by <img src="./resources/trinity_edge_matrix.png" width=30> Trinity-Edge (based on an early snapshot).
+</div>
 
 ## Requirements
 
@@ -64,7 +74,7 @@ tensorboard --host 0.0.0.0 --logdir=~/ray_results
 - ✓ Investigate into the memory overflow issue.
 - ✓ Improve action masking to rule out redundant flex actions.
 - ✓ Enable GPU support.
-- ▢ Need more efficient network computation to speed up in GPU mode, the current computation is not efficient enough.
+- ▢ Need more efficient network computation to speed up in GPU mode, the current computation is not efficient enough: profiling of which procedure takes longest (for-loop, graph comp., or other).
 - ▢ Switch to a more precise DSL.
 - ▢ Check and set a proper `max_step` in training.
 

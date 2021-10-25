@@ -15,7 +15,7 @@ import solinv.tyrell.spec as S
 import solinv.tyrell.dsl as D
 from solinv.tyrell.interpreter import InvariantInterpreter
 from solinv.environment import InvariantEnvironment
-from solinv.model import InvariantTGN, TestInvariantTGN
+from solinv.model import InvariantTGN, InvariantGCN
 
 if __name__ == "__main__":
     spec = S.parse_file("./dsls/abstract0.tyrell")
@@ -60,15 +60,15 @@ if __name__ == "__main__":
     # ray.init(local_mode=True)
     # use non local mode to enable GPU
     ray.init()
-    ModelCatalog.register_custom_model("invariant_tgn", InvariantTGN)
-    # ModelCatalog.register_custom_model("invariant_tgn", TestInvariantTGN)
+    # ModelCatalog.register_custom_model("invariant_tgn", InvariantTGN)
+    ModelCatalog.register_custom_model("invariant_gcn", InvariantGCN)
 
     rl_config = ppo.DEFAULT_CONFIG.copy()
     rl_config = {
         "env": InvariantEnvironment,
         "env_config": env_config,
         "model": {
-            "custom_model": "invariant_tgn",
+            "custom_model": "invariant_gcn",
             "custom_model_config": {
                 "num_token_embeddings": len(tmp_environment.token_list),
                 "token_embedding_dim": 16,
