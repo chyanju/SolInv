@@ -2,6 +2,7 @@ import argparse
 import numpy as np
 import os
 import random
+import argparse
 
 # ray related utils
 import ray
@@ -18,6 +19,10 @@ from solinv.environment import InvariantEnvironment
 from solinv.model import InvariantTGN, InvariantGCN
 
 if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--ngpu", default=0, type=int, help="how many gpus are there for use, default: 0")
+    args = ap.parse_args()
+
     spec = S.parse_file("./dsls/abstract0.tyrell")
     start_type = spec.get_type("Expr")
     interpreter = InvariantInterpreter()
@@ -84,7 +89,7 @@ if __name__ == "__main__":
             },
         },
         "num_workers": 1,
-        "num_gpus": 1,
+        "num_gpus": args.ngpu,
         "framework": "torch",
     }
 

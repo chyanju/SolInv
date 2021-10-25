@@ -13,7 +13,7 @@ from torch_geometric.nn import GCNConv
 
 import traceback
 
-class InvariantTGN(TorchModelV2, nn.Module):
+class InvariantGCN(TorchModelV2, nn.Module):
     def __init__(self, obs_space, action_space, num_outputs, model_config, name):
         nn.Module.__init__(self)
         super().__init__(obs_space, action_space, num_outputs, model_config, name)
@@ -218,7 +218,8 @@ class InvariantTGN(TorchModelV2, nn.Module):
         tmp0_graph_data = self.recover_graph_data(input_dict["obs"]["contract_id"])
         # tmp1_graph_repr: [(num_nodes, token_embedding_dim), ...]
         tmp1_graph_repr = [
-            F.relu(self.contract_conv( p["x"], p["edge_index"], p["edge_attr"] ))
+            # F.relu(self.contract_conv( p["x"], p["edge_index"], p["edge_attr"] ))
+            F.relu(self.contract_conv( p["x"], p["edge_index"] ))
             for p in tmp0_graph_data
         ]
 
