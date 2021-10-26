@@ -100,11 +100,15 @@ if __name__ == "__main__":
 
     # tune.run("PPO", stop={"episode_reward_mean": 200}, config=rl_config)
 
-    agent = ppo.PPOTrainer(env=InvariantEnvironment, config=rl_config)
+    trainer = ppo.PPOTrainer(env=InvariantEnvironment, config=rl_config)
+    checkpoint = trainer.save()
+    print("# checkpoint saved at: {}".format(checkpoint))
     
     for i in range(100):
         print("# i={}".format(i))
-        res = agent.train()
+        res = trainer.train()
         print(pretty_print(res))
+        checkpoint = trainer.save()
+        print("# checkpoint saved at: {}".format(checkpoint))
 
     ray.shutdown()
