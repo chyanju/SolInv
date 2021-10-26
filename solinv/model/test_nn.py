@@ -31,6 +31,7 @@ class TestNN(TorchModelV2, nn.Module):
 
         # encoding utils for contract (igraph)
         # parameter ref: https://github.com/pyg-team/pytorch_geometric/blob/master/examples/gat.py
+        #                https://github.com/pyg-team/pytorch_geometric/blob/master/examples/tgn.py
         self.contract_conv0 = TransformerConv(
             in_channels=self.config["token_embedding_dim"],
             out_channels=self.config["token_embedding_dim"],

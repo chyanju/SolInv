@@ -79,7 +79,7 @@ tensorboard --host 0.0.0.0 --logdir=~/ray_results
 - ✓ Investigate into the memory overflow issue.
 - ✓ Improve action masking to rule out redundant flex actions.
 - ✓ Enable GPU support.
-- ▢ Need more efficient network computation to speed up in GPU mode, the current computation is not efficient enough: profiling of which procedure takes longest (for-loop, graph comp., or other).
+- ✓ Need more efficient network computation to speed up in GPU mode, the current computation is not efficient enough: profiling of which procedure takes longest (for-loop, graph comp., or other).
 - ▢ Switch to a more precise DSL.
 - ▢ Check and set a proper `max_step` in training.
 
