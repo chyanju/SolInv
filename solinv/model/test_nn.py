@@ -122,8 +122,8 @@ class TestNN(TorchModelV2, nn.Module):
     @override(TorchModelV2)
     def forward(self, input_dict, state, seq_lens):
         # DEBUG
-        if input_dict["obs"]["start"].shape[0]==128:
-            print("\r# calling forward, B={}, ts={}".format(input_dict["obs"]["start"].shape[0], time.time()), end="")
+        # if input_dict["obs"]["start"].shape[0]==128:
+        #     print("\r# calling forward, B={}, ts={}".format(input_dict["obs"]["start"].shape[0], time.time()), end="")
         # state and seq_lens are not used here
 
         if all((input_dict["obs"]["start"].flatten() == 0).tolist()):
