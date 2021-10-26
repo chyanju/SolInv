@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import torch
 import torch.nn as nn
@@ -9,9 +10,7 @@ from ray.rllib.models.preprocessors import get_preprocessor
 from ray.rllib.utils.annotations import override
 
 from torch_geometric.data import Data
-from torch_geometric.nn import GCNConv
-
-import traceback
+from torch_geometric.nn import TransformerConv
 
 class TestNN(TorchModelV2, nn.Module):
     def __init__(self, obs_space, action_space, num_outputs, model_config, name):
@@ -31,10 +30,27 @@ class TestNN(TorchModelV2, nn.Module):
         )
 
         # encoding utils for contract (igraph)
-        self.contract_conv = GCNConv(
+        # parameter ref: https://github.com/pyg-team/pytorch_geometric/blob/master/examples/gat.py
+        self.contract_conv0 = TransformerConv(
             in_channels=self.config["token_embedding_dim"],
-            out_channels=self.config["token_embedding_dim"]
+            out_channels=self.config["token_embedding_dim"],
+            edge_dim=self.config["token_embedding_dim"],
+            heads=self.config["conv_heads"], 
+            dropout=self.config["conv_dropout"],
         )
+        # conv1 is a helper conv that shrink the heads*dim to dim
+        self.contract_conv1 = nn.Linear(
+            self.config["token_embedding_dim"]*self.config["conv_heads"],
+            self.config["token_embedding_dim"],
+        )
+        # self.contract_conv1 = TransformerConv(
+        #     in_channels=self.config["token_embedding_dim"]*self.config["conv_heads"],
+        #     out_channels=self.config["token_embedding_dim"],
+        #     edge_dim=self.config["token_embedding_dim"],
+        #     heads=1,
+        #     dropout=self.config["conv_dropout"],
+        #     concat=False,
+        # )
 
         # invariant is also composed by tokens
         self.invariant_projection = nn.Linear(
@@ -104,6 +120,9 @@ class TestNN(TorchModelV2, nn.Module):
 
     @override(TorchModelV2)
     def forward(self, input_dict, state, seq_lens):
+        # DEBUG
+        if input_dict["obs"]["start"].shape[0]==128:
+            print("\r# calling forward, B={}, ts={}".format(input_dict["obs"]["start"].shape[0], time.time()), end="")
         # state and seq_lens are not used here
 
         if all((input_dict["obs"]["start"].flatten() == 0).tolist()):
@@ -122,9 +141,11 @@ class TestNN(TorchModelV2, nn.Module):
         tmp0_graph_data = self.recover_graph_data(input_dict["obs"]["contract_id"])
         # tmp1_graph_repr: [(num_nodes, token_embedding_dim), ...]
         tmp1_graph_repr = [
-            # DEBUG: disable edge_attr encoding first
-            # F.relu(self.contract_conv( p["x"], p["edge_index"], p["edge_attr"] ))
-            F.relu(self.contract_conv( p["x"], p["edge_index"] ))
+            F.relu(self.contract_conv1(
+                F.relu(self.contract_conv0( 
+                    p["x"], p["edge_index"], p["edge_attr"]
+                ))
+            ))
             for p in tmp0_graph_data
         ]
 

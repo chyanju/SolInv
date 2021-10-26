@@ -1,6 +1,27 @@
 from copy import deepcopy
 import igraph as ig
 
+def add_reversed_edges(arg_igraph):
+    """Inserts reversed edges by exchanging the source and target and marking the edge label as REV_???"""
+    # first export nodes as records
+    node_attributes = arg_igraph.vs["token"]
+    edge_attributes = arg_igraph.es["token"]
+    edge_tuples = [ arg_igraph.es[i].tuple for i in range(len(arg_igraph.es)) ]
+    assert len(edge_attributes)==len(edge_tuples)
+    # then add reversed edges
+    ext_edge_attributes = []
+    ext_edge_tuples = []
+    for i in range(len(edge_tuples)):
+        ext_edge_attributes.append( "REV_{}".format(edge_attributes[i]) )
+        ext_edge_tuples.append( (edge_tuples[i][1], edge_tuples[i][0]) )
+    return ig.Graph(
+        directed=True,
+        n=len(node_attributes),
+        vertex_attrs={"token": node_attributes},
+        edges=edge_tuples+ext_edge_tuples,
+        edge_attrs={"token": edge_attributes+ext_edge_attributes},
+    )
+
 def insert_padding_node(arg_igraph, arg_e2n, arg_e2r, arg_root_id, arg_padding_token="<PAD>"):
     """Inserts an extra node at the very beginning (index=0) with padding token as label"""
     # assertions come first
@@ -35,7 +56,6 @@ def insert_padding_node(arg_igraph, arg_e2n, arg_e2r, arg_root_id, arg_padding_t
     }
     new_root_id = arg_root_id + 1
     return new_igraph, new_e2n, new_e2r, new_root_id
-
 
 def extract_tokens(d, f):
     """Extract tokens from an JSON AST, using extraction function f"""

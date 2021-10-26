@@ -79,6 +79,9 @@ if __name__ == "__main__":
                 "num_token_embeddings": len(tmp_environment.token_list),
                 "token_embedding_dim": 16,
                 "token_embedding_padding_idx": tmp_environment.token_dict["<PAD>"],
+                "conv_heads": 8,
+                "conv_dropout": 0,
+                # "conv_dropout": 0.6,
 
                 "invariant_hidden_dim": 64,
                 "invariant_out_dim": 32,

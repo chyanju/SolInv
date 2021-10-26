@@ -39,7 +39,7 @@ python ./example0.py
 # run with gpu
 CUDA_VISIBLE_DEVICES=0 python ./example0.py --ngpu 1
 
-# start tensorboard
+# start tensorboard, port is 6006
 tensorboard --host 0.0.0.0 --logdir=~/ray_results
 ```
 

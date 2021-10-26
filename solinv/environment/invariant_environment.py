@@ -21,7 +21,7 @@ from ..tyrell.dsl.utils import derive_dfs, get_hole_dfs
 from .invariant_heuristic import InvariantHeuristic
 from .error import EnvironmentError
 
-from .soltype_ast import get_soltype_ast, soltype_ast_to_igraph, insert_padding_node
+from .soltype_ast import get_soltype_ast, soltype_ast_to_igraph, insert_padding_node, add_reversed_edges
 
 class InvariantEnvironment(gym.Env):
     # note: class static variable
@@ -108,6 +108,9 @@ class InvariantEnvironment(gym.Env):
             'DFun_first', 'DFun_next',
             # special
             'contents'])
+        # extend the edge token with reversed version
+        tmp_reversed_edge_token_list = ["REV_{}".format(p) for p in self.reserved_edge_token_list]
+        self.reserved_edge_token_list = sorted( self.reserved_edge_token_list+tmp_reversed_edge_token_list )
 
         # every token in the token list should have a fixed embedding for
         self.base_token_list = self.special_token_list \
@@ -191,6 +194,8 @@ class InvariantEnvironment(gym.Env):
             # - an identifier is NOT always a variable (it could also be some reserved one like "require")
             self.contract_slim_ast, vs, es, var_v = get_soltype_ast(self.contract_json)
             self.contract_e2n, self.contract_e2r, self.contract_igraph, self.contract_root_id = soltype_ast_to_igraph(self.contract_slim_ast, vs, es, var_v)
+            # note: add reversed edges
+            self.contract_igraph = add_reversed_edges(self.contract_igraph)
             # note: adding an extra padding node
             self.contract_igraph, self.contract_e2n, self.contract_e2r, self.contract_root_id = insert_padding_node(
                 self.contract_igraph, self.contract_e2n, self.contract_e2r, self.contract_root_id
