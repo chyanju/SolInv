@@ -122,8 +122,8 @@ class TestNN(TorchModelV2, nn.Module):
     @override(TorchModelV2)
     def forward(self, input_dict, state, seq_lens):
         # DEBUG
-        # if input_dict["obs"]["start"].shape[0]==128:
-        #     print("\r# calling forward, B={}, ts={}".format(input_dict["obs"]["start"].shape[0], time.time()), end="")
+        if input_dict["obs"]["start"].shape[0]==128:
+            print("\r# calling forward, B={}, ts={}".format(input_dict["obs"]["start"].shape[0], time.time()), end="")
         # state and seq_lens are not used here
 
         if all((input_dict["obs"]["start"].flatten() == 0).tolist()):
@@ -141,14 +141,31 @@ class TestNN(TorchModelV2, nn.Module):
         # tmp0_graph_data: [(B, )]
         tmp0_graph_data = self.recover_graph_data(input_dict["obs"]["contract_id"])
         # tmp1_graph_repr: [(num_nodes, token_embedding_dim), ...]
-        tmp1_graph_repr = [
-            F.relu(self.contract_conv1(
-                F.relu(self.contract_conv0( 
-                    p["x"], p["edge_index"], p["edge_attr"]
+        # tmp1_graph_repr = [
+        #     F.relu(self.contract_conv1(
+        #         F.relu(self.contract_conv0( 
+        #             p["x"], p["edge_index"], p["edge_attr"]
+        #         ))
+        #     ))
+        #     for p in tmp0_graph_data
+        # ]
+        # intra-forward caching
+        tmp1_graph_repr = []
+        _repr_cache = {}
+        _contract_id = input_dict["obs"]["contract_id"].int().cpu().numpy() 
+        for i in range(len(tmp0_graph_data)):
+            _p = tmp0_graph_data[i]
+            _id = _contract_id[i,0]
+            if _id in _repr_cache.keys():
+                tmp1_graph_repr.append(_repr_cache[_id])
+            else:
+                _repr = F.relu(self.contract_conv1(
+                    F.relu(self.contract_conv0( 
+                        _p["x"], _p["edge_index"], _p["edge_attr"]
+                    ))
                 ))
-            ))
-            for p in tmp0_graph_data
-        ]
+                _repr_cache[_id] = _repr
+                tmp1_graph_repr.append(_repr_cache[_id])
 
         # then encode the state
         # =====================

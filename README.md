@@ -48,7 +48,7 @@ tensorboard --host 0.0.0.0 --logdir=~/ray_results
 
 ## Design Notes
 
-#### Reward Design
+#### Reward Design (Outdated)
 
 ```
 # ================================ #
@@ -83,8 +83,10 @@ tensorboard --host 0.0.0.0 --logdir=~/ray_results
 - ✓ Improve action masking to rule out redundant flex actions.
 - ✓ Enable GPU support.
 - ✓ Need more efficient network computation to speed up in GPU mode, the current computation is not efficient enough: profiling of which procedure takes longest (for-loop, graph comp., or other).
-- ▢ Cache contract representation **<u>*within*</u>** one single `forward` call to speed up computation.
-- ▢ Only invariants that pass all the constraints will have no repeat multiplier, but some contracts have ground truth invariants that do not pass all soft constraints.
+- ✓ Cache contract representation **<u>*within*</u>** one single `forward` call to speed up computation.
+- ✓ Only invariants that pass all the constraints will have no repeat multiplier, but some contracts have ground truth invariants that do not pass all soft constraints.
+  - ✓ Current reward can't tell apart sub-optimal invariants (those with all hard constarints satisfied but some soft constraints not satisfied).
+  - ✓ Add baseline scoring system to avoid proposing stupid invariant.
 - ▢ Switch to a more precise DSL.
 - ▢ Check and set a proper `max_step` in training.
 

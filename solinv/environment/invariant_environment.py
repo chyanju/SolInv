@@ -171,6 +171,7 @@ class InvariantEnvironment(gym.Env):
             self.stovar_dict = cached["stovar_dict"]
             self.flex_action_to_stovar = cached["flex_action_to_stovar"]
             self.stovar_to_flex_action = cached["stovar_to_flex_action"]
+            self.contract_baseline_scores = cached["contract_baseline_scores"]
         else:
             # need to start a new process
 
@@ -200,12 +201,6 @@ class InvariantEnvironment(gym.Env):
             self.contract_igraph, self.contract_e2n, self.contract_e2r, self.contract_root_id = insert_padding_node(
                 self.contract_igraph, self.contract_e2n, self.contract_e2r, self.contract_root_id
             )
-            print("# ======")
-            print("# contract: {}\n# e2n: {}\n# e2r: {}\n# root: {}\n# num_nodes: {}\n# num_edges: {}".format(
-                self.contract_path, self.contract_e2n, self.contract_e2r, self.contract_root_id,
-                len(self.contract_igraph.vs), len(self.contract_igraph.es),
-            ))
-            print("# ======")
             # self.contract_networkx = igraph.Graph.to_networkx(self.contract_igraph)
             # map tokens to corresponding ids (no variable will show up since the graph is already anonymous)
             self.contract_encoded_igraph = self.contract_igraph.copy()
@@ -239,6 +234,19 @@ class InvariantEnvironment(gym.Env):
             }
             self.stovar_to_flex_action = { self.flex_action_to_stovar[dkey]:dkey for dkey in self.flex_action_to_stovar.keys() }
 
+            # generate the baseline score (i.e., score for the "true" invariant)
+            # a tuple of ( hard, tot_hard, soft, tot_soft )
+            self.contract_baseline_scores = self.check(self.contract_path, "true", arg_silent_mode=True)
+            # note: do you need to assert the inferiority of the scores of baseline?
+
+            print("# ======")
+            print("# contract: {}\n# e2n: {}\n# e2r: {}\n# root: {}\n# num_nodes: {}\n# num_edges: {}\n# baseline scores: {}".format(
+                self.contract_path, self.contract_e2n, self.contract_e2r, self.contract_root_id,
+                len(self.contract_igraph.vs), len(self.contract_igraph.es),
+                self.contract_baseline_scores
+            ))
+            print("# ======")
+
             # store to cache
             InvariantEnvironment.cached_contract_utils[self.curr_contract_id] = {}
             cached = InvariantEnvironment.cached_contract_utils[self.curr_contract_id]
@@ -256,6 +264,7 @@ class InvariantEnvironment(gym.Env):
             cached["stovar_dict"] = self.stovar_dict
             cached["flex_action_to_stovar"] = self.flex_action_to_stovar
             cached["stovar_to_flex_action"] = self.stovar_to_flex_action
+            cached["contract_baseline_scores"] = self.contract_baseline_scores
 
         # ====== #
         # basics #
@@ -405,7 +414,7 @@ class InvariantEnvironment(gym.Env):
             "all_actions@node_channel": self.pad_to_length(tmp_all_actions_node, self.max_step),
         }
 
-    def check(self, arg_contract_path: str, arg_verifier_inv: str):
+    def check(self, arg_contract_path: str, arg_verifier_inv: str, arg_silent_mode: bool=False):
         ret = subprocess.run(
             "liquidsol-exe {} --task check --check-inv '{}' --only-last".format(arg_contract_path, arg_verifier_inv),
             shell=True, capture_output=True,
@@ -415,10 +424,14 @@ class InvariantEnvironment(gym.Env):
         ret = ret.stdout.decode("utf-8")
         hard_ok, hard = re.search("Hard: ([0-9]+) / ([0-9]+)", ret).groups()
         soft_ok, soft = re.search("Soft: ([0-9]+) / ([0-9]+)", ret).groups()
-        print()
-        print("# [debug] --------------------------------------------- checking good, result: {} ---------------------------------------------".format([hard_ok, hard, soft_ok, soft]))
-        print()
         result = list(map(int, [hard_ok, hard, soft_ok, soft]))
+        if not arg_silent_mode:
+            print()
+            print("# [debug][verifier-result] ----------> hard: {:d}/{:d} ({:+d}), soft: {:d}/{:d} ({:+d}) <----------".format(
+                result[0], result[1], result[0] - self.contract_baseline_scores[0],
+                result[2], result[3], result[2] - self.contract_baseline_scores[2],
+            ))
+            print()
         if result[0]+result[2]==result[1]+result[3]:
             # input("Found the ground truth!")
             pass
@@ -528,9 +541,17 @@ class InvariantEnvironment(gym.Env):
                 else:
                     if tmp_reslist[0]+tmp_reslist[2]==tmp_reslist[1]+tmp_reslist[3]:
                         # completely correct, remove rm
-                        tmp_reward = 10.0*(tmp_reslist[0]+tmp_reslist[2])/(tmp_reslist[1]+tmp_reslist[3])
+                        tmp_reward = 10.0*(tmp_reslist[0]+tmp_reslist[2])/(tmp_reslist[1]+tmp_reslist[3]) * tmp_heuristic_multiplier
+                    elif tmp_reslist[0]==tmp_reslist[1]:
+                        # hard constraints are all satisfied, further categorize
+                        if tmp_reslist[2] > self.contract_baseline_scores[2]:
+                            # soft score better than baseline score, remove rm
+                            tmp_reward = 10.0*(tmp_reslist[0]+tmp_reslist[2])/(tmp_reslist[1]+tmp_reslist[3]) * tmp_heuristic_multiplier
+                        else:
+                            # soft score is no better than baseline score, need rm to get rid of this
+                            tmp_reward = 10.0*(tmp_reslist[0]+tmp_reslist[2])/(tmp_reslist[1]+tmp_reslist[3]) * tmp_heuristic_multiplier * tmp_repeat_multiplier
                     else:
-                        # not entirely correct, still need rm
+                        # some hard constraints are not satisfied, still need rm
                         tmp_reward = 10.0*(tmp_reslist[0]+tmp_reslist[2])/(tmp_reslist[1]+tmp_reslist[3]) * tmp_heuristic_multiplier * tmp_repeat_multiplier
         else:
             if self.is_max():
