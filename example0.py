@@ -3,13 +3,14 @@ import numpy as np
 import os
 import random
 import argparse
+import tempfile
 
 # ray related utils
 import ray
 from ray import tune
 from ray.rllib.agents import ppo, dqn
 from ray.rllib.models import ModelCatalog
-from ray.tune.logger import pretty_print
+from ray.tune.logger import pretty_print, UnifiedLogger
 
 # trinity related utils
 import solinv.tyrell.spec as S
@@ -17,6 +18,19 @@ import solinv.tyrell.dsl as D
 from solinv.tyrell.interpreter import InvariantInterpreter
 from solinv.environment import InvariantEnvironment
 from solinv.model import InvariantTGN, InvariantGCN, TestNN
+
+# customized logger
+# ref: https://stackoverflow.com/questions/62241261/change-logdir-of-ray-rllib-training-instead-of-ray-results
+def custom_log_creator(custom_path, custom_str):
+    # timestr = datetime.today().strftime("%Y-%m-%d_%H-%M-%S")
+    # logdir_prefix = "{}_{}".format(custom_str, timestr)
+    logdir_prefix = "{}_".format(custom_str)
+    def logger_creator(config):
+        if not os.path.exists(custom_path):
+            os.makedirs(custom_path)
+        logdir = tempfile.mkdtemp(prefix=logdir_prefix, dir=custom_path)
+        return UnifiedLogger(config, logdir, loggers=None)
+    return logger_creator
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
@@ -117,9 +131,11 @@ if __name__ == "__main__":
 
     # tune.run("PPO", stop={"episode_reward_mean": 200}, config=rl_config)
 
-    trainer = ppo.PPOTrainer(env=InvariantEnvironment, config=rl_config)
-    # fixme: kind of working, but you need to specify it in a documented way
-    trainer._logdir = os.path.expanduser("~/ray_results/{}".format(args.expname))
+    trainer = ppo.PPOTrainer(
+        env=InvariantEnvironment, 
+        config=rl_config,
+        logger_creator=custom_log_creator(os.path.expanduser("~/ray_results"),"{}".format(args.expname))
+    )
     checkpoint = trainer.save()
     print("# checkpoint saved at: {}".format(checkpoint))
 

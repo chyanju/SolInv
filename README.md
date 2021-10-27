@@ -37,10 +37,10 @@ SolInv/Venti inherits part of the [Trinity](https://github.com/fredfeng/Trinity)
 python ./example0.py --expname exp0
 
 # run with gpu
-CUDA_VISIBLE_DEVICES=0 python ./example0.py --expname exp0 --ngpu 1
+CUDA_VISIBLE_DEVICES=0 python ./example0.py --expname exp1026-0 --ngpu 1
 
 # tee
-CUDA_VISIBLE_DEVICES=0 python ./example0.py --expname exp0 --ngpu 1 2>&1 | tee -a ./exp0.log
+CUDA_VISIBLE_DEVICES=0 python ./example0.py --expname exp1026-0 --ngpu 1 2>&1 | tee -a ./exp1026-0.log
 
 # start tensorboard, port is 6006
 tensorboard --host 0.0.0.0 --logdir=~/ray_results
@@ -87,6 +87,7 @@ optional arguments:
 - https://docs.aws.amazon.com/dlami/latest/devguide/tutorial-base.html
 - https://docs.ray.io/en/master/tune/user-guide.html#checkpointing
 - https://docs.ray.io/en/latest/tune/api_docs/execution.html
+- https://stackoverflow.com/questions/62241261/change-logdir-of-ray-rllib-training-instead-of-ray-results
 
 ## TODO's
 
