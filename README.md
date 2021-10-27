@@ -34,16 +34,27 @@ SolInv/Venti inherits part of the [Trinity](https://github.com/fredfeng/Trinity)
 
 ```bash
 # run without gpu
-python ./example0.py
+python ./example0.py --expname exp0
 
 # run with gpu
-CUDA_VISIBLE_DEVICES=0 python ./example0.py --ngpu 1
+CUDA_VISIBLE_DEVICES=0 python ./example0.py --expname exp0 --ngpu 1
 
 # tee
-CUDA_VISIBLE_DEVICES=0 python ./example0.py --ngpu 1 2>&1 | tee -a ./log.txt
+CUDA_VISIBLE_DEVICES=0 python ./example0.py --expname exp0 --ngpu 1 2>&1 | tee -a ./exp0.log
 
 # start tensorboard, port is 6006
 tensorboard --host 0.0.0.0 --logdir=~/ray_results
+```
+
+## Usage
+
+```bash
+usage: example0.py [-h] [--ngpu NGPU] [--expname EXPNAME]
+
+optional arguments:
+  -h, --help         show this help message and exit
+  --ngpu NGPU        how many gpus are there for use, default: 0
+  --expname EXPNAME  the experiment name, default: temp
 ```
 
 ## Design Notes
@@ -74,6 +85,8 @@ tensorboard --host 0.0.0.0 --logdir=~/ray_results
 - https://docs.ray.io/en/latest/rllib-training.html#getting-started
 - https://codepen.io/sosuke/pen/Pjoqqp
 - https://docs.aws.amazon.com/dlami/latest/devguide/tutorial-base.html
+- https://docs.ray.io/en/master/tune/user-guide.html#checkpointing
+- https://docs.ray.io/en/latest/tune/api_docs/execution.html
 
 ## TODO's
 

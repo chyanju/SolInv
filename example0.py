@@ -21,6 +21,7 @@ from solinv.model import InvariantTGN, InvariantGCN, TestNN
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--ngpu", default=0, type=int, help="how many gpus are there for use, default: 0")
+    ap.add_argument("--expname", default="temp", type=str, help="the experiment name, default: temp")
     args = ap.parse_args()
 
     spec = S.parse_file("./dsls/abstract0.tyrell")
@@ -117,14 +118,25 @@ if __name__ == "__main__":
     # tune.run("PPO", stop={"episode_reward_mean": 200}, config=rl_config)
 
     trainer = ppo.PPOTrainer(env=InvariantEnvironment, config=rl_config)
+    # fixme: kind of working, but you need to specify it in a documented way
+    trainer._logdir = os.path.expanduser("~/ray_results/{}".format(args.expname))
     checkpoint = trainer.save()
     print("# checkpoint saved at: {}".format(checkpoint))
-    
+
     for i in range(100):
         print("# i={}".format(i))
         res = trainer.train()
         print(pretty_print(res))
         checkpoint = trainer.save()
         print("# checkpoint saved at: {}".format(checkpoint))
+
+    # tune.run(
+    #     "PPO",
+    #     stop={"training_iteration": 1000000},
+    #     config=rl_config,
+    #     checkpoint_freq=1,
+    #     checkpoint_at_end=True,
+    #     name="test",
+    # )
 
     ray.shutdown()

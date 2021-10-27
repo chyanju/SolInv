@@ -81,12 +81,6 @@ class TestNN(TorchModelV2, nn.Module):
 
         self._invariant_features = None
 
-        # this caches contract utils for faster switching
-        # between cotnracts in training between different rollouts
-        # and also prevents memory overflow from implicit tensor copy by calling
-        # the type conversion methods every time (e.g., `tensor.long()`)
-        self.cached_contract_utils = {}
-
     def where(self):
         return next(self.parameters()).device
 
