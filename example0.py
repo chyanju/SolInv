@@ -54,28 +54,28 @@ if __name__ == "__main__":
             # Soft: 2 / 2
             # ("./benchmarks/mint_MI.sol", "0.5.17"),
 
-            # 1. sum(balances) <= totalSupply_
+            # 0. sum(balances) <= totalSupply_
             # liquidsol-exe ./benchmarks/easy/0x28b5e12cce51f15594b0b91d5b5adaa70f684a02.sol --task check --check-inv 'sum(balances) <= totalSupply_' --only-last
             # stovars: 9
             # Hard: 46 / 46
             # Soft: 9 / 11
             ("./benchmarks/easy/0x28b5e12cce51f15594b0b91d5b5adaa70f684a02.sol", "0.4.26"), 
 
-            # 2. sum(balances) <= totalSupply_
+            # 1. sum(balances) <= totalSupply_
             # liquidsol-exe ./benchmarks/easy/0x6704b673c70de9bf74c8fba4b4bd748f0e2190e1.sol --task check --check-inv 'sum(balances) <= totalSupply_' --only-last
             # stovars: 8
             # Hard: 77 / 77
             # Soft: 10 / 11
             ("./benchmarks/easy/0x6704b673c70de9bf74c8fba4b4bd748f0e2190e1.sol", "0.4.26"), 
 
-            # 3. sum(balances) <= totalSupply
+            # 2. sum(balances) <= totalSupply
             # liquidsol-exe ./benchmarks/easy/0x6745fab6801e376cd24f03572b9c9b0d4edddccf.sol --task check --check-inv 'sum(balances) <= totalSupply' --only-last
             # stovars: 8
             # Hard: 69 / 69
             # Soft: 3 / 8
             ("./benchmarks/easy/0x6745fab6801e376cd24f03572b9c9b0d4edddccf.sol", "0.4.26"), 
 
-            # 4. sum(balances) <= totalSupply
+            # 3. sum(balances) <= totalSupply
             # liquidsol-exe ./benchmarks/easy/0x9041fe5b3fdea0f5e4afdc17e75180738d877a01.sol --task check --check-inv 'sum(balances) <= totalSupply' --only-last
             # stovars: 7
             # Hard: 29 / 29

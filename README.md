@@ -40,7 +40,7 @@ python ./example0.py --expname exp0
 CUDA_VISIBLE_DEVICES=0 python ./example0.py --expname exp1026-0 --ngpu 1
 
 # tee
-CUDA_VISIBLE_DEVICES=0 python ./example0.py --expname exp1026-0 --ngpu 1 2>&1 | tee -a ./exp1026-0.log
+CUDA_VISIBLE_DEVICES=0 python ./example0.py --expname exp1028-contract0 --ngpu 1 2>&1 | tee -a ./exp1026-contract0.log
 
 # start tensorboard, port is 6006
 tensorboard --host 0.0.0.0 --logdir=~/ray_results
